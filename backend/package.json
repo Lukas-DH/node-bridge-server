@@ -1,0 +1,30 @@
+{
+  "name": "pipette-bridge-server",
+  "version": "1.0.0",
+  "description": "TCP-to-Serial bridge server for Picus 2 pipettes with real-time web dashboard",
+  "main": "bridge-server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node bridge-server.js",
+    "dev": "nodemon bridge-server.js"
+  },
+  "keywords": [
+    "pipette",
+    "bridge",
+    "serial",
+    "tcp",
+    "robotics",
+    "universal-robots"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "socket.io": "^4.6.1",
+    "serialport": "^12.0.0",
+    "cors": "^2.8.5"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}

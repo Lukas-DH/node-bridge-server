@@ -1,0 +1,86 @@
+# ======================================
+# General
+# ======================================
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Environment files (keep secrets local)
+.env
+.env.*.local
+
+# Dependency directories
+node_modules/
+**/node_modules/
+
+# Build artifacts
+dist/
+build/
+out/
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*.bak
+
+# Cache
+.cache/
+.next/
+.vite/
+.eslintcache
+.stylelintcache
+
+# Editor folders
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# ======================================
+# React (client)
+# ======================================
+client/node_modules/
+client/build/
+client/.env
+client/.eslintcache
+
+# ======================================
+# Express (server)
+# ======================================
+server/node_modules/
+server/dist/
+server/.env
+server/coverage/
+
+# ======================================
+# Testing
+# ======================================
+coverage/
+*.lcov
+
+# ======================================
+# Misc
+# ======================================
+# Ignore local configurations and lock files if using multiple package managers
+npm-debug.log*
+yarn.lock
+pnpm-lock.yaml
+package-lock.json
+
+# ======================================
+# Optional: macOS / JetBrains / VSCode
+# ======================================
+.DS_Store
+.idea/
+.vscode/
