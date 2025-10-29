@@ -305,6 +305,31 @@ code {
   text-align: center;
 }
 
+.active-target {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, #51cf66 0%, #40c057 100%);
+  border-radius: 8px;
+  color: white;
+  font-size: 0.95rem;
+  text-align: center;
+}
+
+.active-target strong {
+  font-weight: 600;
+}
+
+.no-target-warning {
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 212, 59, 0.1);
+  border: 1px solid #ffd43b;
+  border-radius: 8px;
+  color: #ffd43b;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
 /* Handshake Viewer */
 .handshake-header,
 .logs-header {

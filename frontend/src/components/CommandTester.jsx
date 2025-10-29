@@ -1,6 +1,6 @@
 import { useState } from "react";
 
-function CommandTester({ onSendCommand, disabled }) {
+function CommandTester({ onSendCommand, disabled, activePipette }) {
   const [command, setCommand] = useState("");
   const [customCommand, setCustomCommand] = useState("");
 
@@ -46,6 +46,18 @@ function CommandTester({ onSendCommand, disabled }) {
   return (
     <div className="command-tester">
       <h2>Command Tester</h2>
+
+      {activePipette && (
+        <div className="active-target">
+          <strong>Active Target:</strong> {activePipette}
+        </div>
+      )}
+
+      {!activePipette && (
+        <div className="no-target-warning">
+          ⚠️ No pipette selected. Please select a pipette above.
+        </div>
+      )}
 
       <div className="preset-commands">
         <h3>Preset Commands</h3>

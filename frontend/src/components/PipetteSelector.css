@@ -1,0 +1,109 @@
+.pipette-selector {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  margin-bottom: 20px;
+}
+
+.pipette-selector h3 {
+  margin-top: 0;
+  margin-bottom: 15px;
+  color: #333;
+  font-size: 18px;
+}
+
+.no-pipettes {
+  color: #666;
+  font-style: italic;
+  padding: 10px;
+  text-align: center;
+  background: #f5f5f5;
+  border-radius: 4px;
+}
+
+.pipette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pipette-option {
+  display: flex;
+  align-items: center;
+  padding: 12px 15px;
+  border: 2px solid #e0e0e0;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  background: #fafafa;
+}
+
+.pipette-option:hover {
+  border-color: #4CAF50;
+  background: #f0f8f0;
+}
+
+.pipette-option.disconnected {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.pipette-option.disconnected:hover {
+  border-color: #e0e0e0;
+  background: #fafafa;
+}
+
+.pipette-option input[type="radio"] {
+  margin-right: 12px;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.pipette-option input[type="radio"]:disabled {
+  cursor: not-allowed;
+}
+
+.pipette-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 4px;
+}
+
+.pipette-model {
+  font-weight: 600;
+  color: #333;
+  font-size: 14px;
+}
+
+.pipette-port {
+  font-size: 12px;
+  color: #666;
+  font-family: monospace;
+}
+
+.status-indicator {
+  font-size: 16px;
+  margin-left: 10px;
+}
+
+.status-indicator.connected {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+/* Checked state */
+.pipette-option:has(input[type="radio"]:checked) {
+  border-color: #4CAF50;
+  background: #e8f5e9;
+}
