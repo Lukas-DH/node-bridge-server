@@ -6,7 +6,8 @@ import CommunicationLogs from './components/CommunicationLogs'
 import HandshakeViewer from './components/HandshakeViewer'
 import CommandTester from './components/CommandTester'
 
-const BACKEND_URL = 'http://localhost:3001'
+// const BACKEND_URL = 'http://localhost:3001'
+const BACKEND_URL = 'http://192.168.1.88:3001'
 
 function App() {
   const [socket, setSocket] = useState(null)
