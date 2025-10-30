@@ -548,8 +548,29 @@ const tcpServer = net.createServer((socket) => {
     const command = data.toString("utf-8").trim();
     log("command", "robot", `Received: ${command}`);
 
+    // Check if command starts with pipette model name
+    const parts = command.split(' ');
+    const firstWord = parts[0];
+
+    // Check if first word is a known pipette model
+    const pipette = pipetteRegistry.discovered.find(p => p.model === firstWord);
+
+    let actualCommand;
+
+    if (pipette) {
+      // First word is a pipette model - select it and extract actual command
+      pipetteRegistry.activeModel = firstWord;
+      actualCommand = parts.slice(1).join(' ');
+      log("info", "robot", `Switched to pipette: ${firstWord}`);
+      log("command", "robot", `Command for ${firstWord}: ${actualCommand}`);
+      io.emit("active-pipette", firstWord); // Notify dashboard
+    } else {
+      // No model prefix - use current active pipette
+      actualCommand = command;
+    }
+
     // Forward to pipette and wait for response
-    const response = await sendToPipette(command);
+    const response = await sendToPipette(actualCommand);
 
     // Send response back to robot
     const responseJson = JSON.stringify(response) + "\n";
