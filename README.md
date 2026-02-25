@@ -28,6 +28,7 @@ This is a **Node.js alternative** to the Python bridge server, featuring a moder
 ## Features
 
 ### Backend (Node.js)
+
 - ✅ TCP server for robot connections (port 5000)
 - ✅ Serial communication with Picus 2 pipette
 - ✅ HTTP + WebSocket server (port 3001)
@@ -36,6 +37,7 @@ This is a **Node.js alternative** to the Python bridge server, featuring a moder
 - ✅ Smart handshake parsing
 
 ### Frontend (React)
+
 - ✅ **Network Topology** - Visual diagram with animated connections
 - ✅ **Connection Status** - Real-time indicators for all connections
 - ✅ **Communication Logs** - Live message stream with filtering
@@ -71,12 +73,14 @@ npm install
 **Option 1: Backend + Frontend (Development)**
 
 Terminal 1 - Backend:
+
 ```bash
 cd backend
 npm start
 ```
 
 Terminal 2 - Frontend:
+
 ```bash
 cd frontend
 npm run dev
@@ -96,6 +100,7 @@ Dashboard available at: http://localhost:3001 (if built)
 Open browser: http://localhost:3000
 
 You should see:
+
 - 🟢 Server: connected
 - 🔴 Robot: disconnected (until robot connects)
 - 🟢/🔴 Pipette: depends on USB connection
@@ -108,7 +113,8 @@ Edit `backend/bridge-server.js`:
 
 ```javascript
 const CONFIG = {
-  serialPort: '/dev/tty.usbmodem438812441',  // ← Change this
+  serialPort: "/dev/tty.usbmodem438812441", // ← Change this
+  // serialPort: '/dev/ttyACM0',  // ← Change this
   serialBaudRate: 230400,
   tcpPort: 5000,
   httpPort: 3001,
@@ -117,6 +123,7 @@ const CONFIG = {
 ```
 
 Or set environment variable:
+
 ```bash
 SERIAL_PORT=/dev/ttyACM0 npm start
 ```
@@ -167,11 +174,11 @@ socket_close("pipette")
 Use the "Custom Command" section:
 
 ```json
-{"data":"GET_VERSION"}
+{ "data": "GET_VERSION" }
 ```
 
 ```json
-{"no": 2, "data": "RUN_ASPIRATE 100 7"}
+{ "no": 2, "data": "RUN_ASPIRATE 100 7" }
 ```
 
 ## Project Structure
@@ -207,6 +214,7 @@ node-bridge-server/
 **Server → Client:**
 
 - `status` - Connection status update
+
   ```json
   {
     "robot": "connected" | "disconnected",
@@ -216,6 +224,7 @@ node-bridge-server/
   ```
 
 - `log` - New log entry
+
   ```json
   {
     "timestamp": "2025-10-19T12:34:56.789Z",
@@ -239,15 +248,17 @@ node-bridge-server/
 
 - `send-command` - Send test command
   ```javascript
-  socket.emit('send-command', '{"data":"GET_VERSION"}')
+  socket.emit("send-command", '{"data":"GET_VERSION"}');
   ```
 
 ### REST API
 
 #### GET `/api/status`
+
 Get current connection status
 
 **Response:**
+
 ```json
 {
   "robot": "connected",
@@ -257,9 +268,11 @@ Get current connection status
 ```
 
 #### POST `/api/command`
+
 Send test command
 
 **Request:**
+
 ```json
 {
   "command": "{\"data\":\"GET_VERSION\"}"
@@ -267,10 +280,11 @@ Send test command
 ```
 
 **Response:**
+
 ```json
 {
   "status": "OK",
-  "data": {"version": "2.0.1"},
+  "data": { "version": "2.0.1" },
   "message": null
 }
 ```
@@ -278,42 +292,47 @@ Send test command
 ## Screenshots
 
 ### Dashboard Overview
+
 - Network topology with real-time connection status
 - Animated data flow visualization
 - Color-coded status indicators
 
 ### Communication Logs
+
 - Real-time message stream
 - Filterable by keyword
 - Auto-scroll option
 - Color-coded by source
 
 ### Handshake Monitor
+
 - Step-by-step handshake visualization
 - Timing information
 - Completion status
 
 ### Command Tester
+
 - Preset commands for common operations
 - Custom JSON command input
 - Real-time feedback
 
 ## Comparison with Python Version
 
-| Feature | Python + asyncio | Node.js + React |
-|---------|------------------|-----------------|
-| **Backend** | Python (asyncio) | Node.js (event loop) |
-| **Dashboard** | ❌ None | ✅ React web UI |
-| **Real-time monitoring** | ❌ CLI only | ✅ WebSocket updates |
-| **Topology view** | ❌ | ✅ Visual diagram |
-| **Command testing** | ❌ Manual | ✅ Web interface |
-| **Log filtering** | ❌ | ✅ Built-in |
-| **Handshake viz** | ❌ | ✅ Step-by-step |
-| **Memory footprint** | ~30MB | ~50MB |
-| **Dev experience** | Terminal | Browser |
-| **Deployment** | Python runtime | Node.js runtime |
+| Feature                  | Python + asyncio | Node.js + React      |
+| ------------------------ | ---------------- | -------------------- |
+| **Backend**              | Python (asyncio) | Node.js (event loop) |
+| **Dashboard**            | ❌ None          | ✅ React web UI      |
+| **Real-time monitoring** | ❌ CLI only      | ✅ WebSocket updates |
+| **Topology view**        | ❌               | ✅ Visual diagram    |
+| **Command testing**      | ❌ Manual        | ✅ Web interface     |
+| **Log filtering**        | ❌               | ✅ Built-in          |
+| **Handshake viz**        | ❌               | ✅ Step-by-step      |
+| **Memory footprint**     | ~30MB            | ~50MB                |
+| **Dev experience**       | Terminal         | Browser              |
+| **Deployment**           | Python runtime   | Node.js runtime      |
 
 **Recommendation:**
+
 - **Python**: Simpler, lighter, headless deployment
 - **Node.js**: Better for development, testing, and monitoring
 
@@ -322,12 +341,14 @@ Send test command
 ### Backend won't start
 
 **"Cannot find module 'serialport'"**
+
 ```bash
 cd backend
 npm install
 ```
 
 **"Port 5000 already in use"**
+
 ```bash
 # Find and kill process
 lsof -i :5000
@@ -335,6 +356,7 @@ kill -9 <PID>
 ```
 
 **"Serial port not found"**
+
 ```bash
 # List available ports
 ls /dev/tty.*  # macOS
@@ -346,6 +368,7 @@ ls /dev/ttyACM* /dev/ttyUSB*  # Linux
 ### Frontend won't start
 
 **"Cannot find module 'react'"**
+
 ```bash
 cd frontend
 npm install
@@ -353,17 +376,19 @@ npm install
 
 **"Port 3000 already in use"**
 Change port in `vite.config.js`:
+
 ```javascript
 export default defineConfig({
   server: {
-    port: 3001,  // Change this
+    port: 3001, // Change this
   },
-})
+});
 ```
 
 ### Dashboard shows "Server disconnected"
 
 Backend not running or wrong URL:
+
 ```bash
 # Start backend
 cd backend
@@ -376,13 +401,14 @@ const BACKEND_URL = 'http://localhost:3001'  // Should match backend httpPort
 ### CORS errors
 
 Backend CORS is configured for all origins (`*`). If you need restrictions, edit `backend/bridge-server.js`:
+
 ```javascript
 const io = new SocketIOServer(httpServer, {
   cors: {
-    origin: 'http://localhost:3000',
-    methods: ['GET', 'POST'],
+    origin: "http://localhost:3000",
+    methods: ["GET", "POST"],
   },
-})
+});
 ```
 
 ## Performance
@@ -408,11 +434,11 @@ npm run build
 Add to `backend/bridge-server.js`:
 
 ```javascript
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from "path";
+import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-app.use(express.static(path.join(__dirname, '../frontend/dist')));
+app.use(express.static(path.join(__dirname, "../frontend/dist")));
 ```
 
 Now frontend is served from backend port 3001.
@@ -452,17 +478,20 @@ sudo systemctl start pipette-bridge
 Edit `backend/bridge-server.js` → `parseHandshake()`
 
 **New UI component:**
+
 1. Create `frontend/src/components/NewComponent.jsx`
 2. Import in `App.jsx`
 3. Add to layout
 
 **New WebSocket event:**
+
 1. Backend: `io.emit('new-event', data)`
 2. Frontend: `socket.on('new-event', (data) => {...})`
 
 ### Testing
 
 **Backend:**
+
 ```bash
 cd backend
 # Use netcat to simulate robot
@@ -471,6 +500,7 @@ nc localhost 5000
 ```
 
 **Frontend:**
+
 ```bash
 cd frontend
 npm run dev
@@ -482,6 +512,7 @@ npm run dev
 ⚠️ **This server has NO authentication!**
 
 For production:
+
 - Add authentication (JWT, API keys)
 - Use HTTPS/WSS
 - Restrict CORS origins
