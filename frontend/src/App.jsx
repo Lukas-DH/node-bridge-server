@@ -17,6 +17,8 @@ function App() {
     serial: "disconnected",
     server: "disconnected",
     dashboard: "disconnected",
+    qr: "disconnected",
+    qrValue: null,
   });
   const [logs, setLogs] = useState([]);
   const [handshakeSteps, setHandshakeSteps] = useState([]);
@@ -41,15 +43,19 @@ function App() {
         serial: "disconnected",
         server: "disconnected",
         dashboard: "disconnected",
+        qr: "disconnected",
+        qrValue: null,
       });
     });
 
     // Listen for status updates
     newSocket.on("status", (newStatus) => {
-      setStatus({
+      setStatus((prev) => ({
         ...newStatus,
         server: "connected",
-      });
+        qrValue: prev.qrValue,
+        qrTimestamp: prev.qrTimestamp,
+      }));
     });
 
     // Listen for logs
@@ -67,6 +73,11 @@ function App() {
         // Continue current handshake
         return [...prev, step];
       });
+    });
+
+    // Listen for QR code updates
+    newSocket.on("qr-update", (data) => {
+      setStatus((prev) => ({ ...prev, qrValue: data.value, qrTimestamp: data.timestamp }));
     });
 
     setSocket(newSocket);
@@ -135,6 +146,8 @@ function App() {
               <RobotControl
                 socket={socket}
                 dashboardStatus={status.dashboard}
+                qrValue={status.qrValue}
+                qrTimestamp={status.qrTimestamp}
               />
             }
           />

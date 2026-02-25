@@ -25,6 +25,7 @@ const CONFIG = {
   serialPort: process.env.SERIAL_PORT || "/dev/tty.usbmodem438812441",
   serialBaudRate: 230400,
   tcpPort: 5001,
+  qrPort: 5002,
   httpPort: 3001,
   handshakeTimeout: 5000, // 5 seconds
 };
@@ -44,6 +45,10 @@ const state = {
   dashboardSocket: null,
   dashboardIp: null,
   dashboardPendingCommand: null,
+  // QR code receiver state
+  currentQrValue: null,
+  qrConnected: false,
+  qrClient: null,
 };
 
 // Express app for HTTP + WebSocket
@@ -70,7 +75,7 @@ function log(type, source, message, data = null) {
   };
 
   console.log(
-    `[${logEntry.timestamp}] [${type.toUpperCase()}] ${source}: ${message}`
+    `[${logEntry.timestamp}] [${type.toUpperCase()}] ${source}: ${message}`,
   );
 
   // Broadcast to all connected web clients
@@ -88,8 +93,9 @@ function emitStatus() {
     dashboard: state.dashboardConnected
       ? "connected"
       : state.dashboardConnecting
-      ? "connecting"
-      : "disconnected",
+        ? "connecting"
+        : "disconnected",
+    qr: state.qrConnected ? "connected" : "disconnected",
   };
 
   io.emit("status", status);
@@ -104,7 +110,7 @@ function setupSerialPort() {
   log(
     "info",
     "server",
-    `Attempting to connect to serial port: ${CONFIG.serialPort}`
+    `Attempting to connect to serial port: ${CONFIG.serialPort}`,
   );
 
   const serialPort = new SerialPort({
@@ -196,7 +202,7 @@ function detectHandshakeType(line) {
 function isHandshakeComplete(lines) {
   const hasEnd = lines.some((l) => l.toUpperCase().includes("END"));
   const hasResult = lines.some(
-    (l) => l.toUpperCase().includes("OK") || l.toUpperCase().includes("ERROR")
+    (l) => l.toUpperCase().includes("OK") || l.toUpperCase().includes("ERROR"),
   );
 
   // Complete if END found, or OK/ERROR found and no END after short wait
@@ -325,7 +331,11 @@ function connectToDashboard(robotIp) {
     state.dashboardIp = robotIp;
     emitStatus();
 
-    log("info", "dashboard", `Connecting to UR Dashboard Server at ${robotIp}:${DASHBOARD_PORT}`);
+    log(
+      "info",
+      "dashboard",
+      `Connecting to UR Dashboard Server at ${robotIp}:${DASHBOARD_PORT}`,
+    );
 
     const socket = new net.Socket();
 
@@ -335,7 +345,11 @@ function connectToDashboard(robotIp) {
       state.dashboardConnected = true;
       state.dashboardConnecting = false;
       state.dashboardSocket = socket;
-      log("info", "dashboard", `Connected to UR Dashboard Server at ${robotIp}`);
+      log(
+        "info",
+        "dashboard",
+        `Connected to UR Dashboard Server at ${robotIp}`,
+      );
       emitStatus();
       resolve(true);
     });
@@ -474,6 +488,58 @@ tcpServer.listen(CONFIG.tcpPort, "0.0.0.0", () => {
 });
 
 // ============================================================================
+// QR CODE TCP SERVER
+// ============================================================================
+
+const qrServer = net.createServer((socket) => {
+  const clientAddr = `${socket.remoteAddress}:${socket.remotePort}`;
+
+  log("info", "qr", `QR client connected: ${clientAddr}`);
+  state.qrConnected = true;
+  state.qrClient = socket;
+  emitStatus();
+
+  socket.on("data", (data) => {
+    const qrValue = data.toString("utf-8").trim();
+
+    // Deduplicate: only log and emit if value changed
+    if (qrValue !== state.currentQrValue) {
+      state.currentQrValue = qrValue;
+      const timestamp = new Date().toISOString();
+
+      log("info", "qr", `QR code received: ${qrValue}`);
+
+      // Emit to all dashboard clients
+      io.emit("qr-update", {
+        value: qrValue,
+        timestamp: timestamp,
+      });
+    }
+
+    // Always send OK response to robot
+    socket.write("OK\n");
+  });
+
+  socket.on("end", () => {
+    log("info", "qr", `QR client disconnected: ${clientAddr}`);
+    state.qrConnected = false;
+    state.qrClient = null;
+    emitStatus();
+  });
+
+  socket.on("error", (err) => {
+    log("error", "qr", `QR socket error: ${err.message}`);
+    state.qrConnected = false;
+    state.qrClient = null;
+    emitStatus();
+  });
+});
+
+qrServer.listen(CONFIG.qrPort, "0.0.0.0", () => {
+  log("info", "server", `QR server listening on port ${CONFIG.qrPort}`);
+});
+
+// ============================================================================
 // HTTP + WEBSOCKET SERVER FOR WEB DASHBOARD
 // ============================================================================
 
@@ -556,12 +622,12 @@ httpServer.listen(CONFIG.httpPort, () => {
   log(
     "info",
     "server",
-    `HTTP + WebSocket server listening on port ${CONFIG.httpPort}`
+    `HTTP + WebSocket server listening on port ${CONFIG.httpPort}`,
   );
   log(
     "info",
     "server",
-    `Dashboard available at: http://localhost:${CONFIG.httpPort}`
+    `Dashboard available at: http://localhost:${CONFIG.httpPort}`,
   );
 });
 
@@ -576,6 +642,7 @@ log("info", "server", "Pipette Bridge Server Started");
 log("info", "server", "=".repeat(60));
 log("info", "server", `Serial port: ${CONFIG.serialPort}`);
 log("info", "server", `TCP port (robot): ${CONFIG.tcpPort}`);
+log("info", "server", `QR port: ${CONFIG.qrPort}`);
 log("info", "server", `HTTP port (dashboard): ${CONFIG.httpPort}`);
 log("info", "server", "=".repeat(60));
 
@@ -586,6 +653,7 @@ process.on("SIGINT", () => {
     state.serialPort.close();
   }
   tcpServer.close();
+  qrServer.close();
   httpServer.close();
   process.exit(0);
 });

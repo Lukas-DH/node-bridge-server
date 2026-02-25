@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import DashboardControls from "../components/DashboardControls";
 
-function RobotControl({ socket, dashboardStatus }) {
+function RobotControl({ socket, dashboardStatus, qrValue, qrTimestamp }) {
   const [robotIp, setRobotIp] = useState(() => {
     return localStorage.getItem("robotIp") || "";
   });
@@ -117,6 +117,23 @@ function RobotControl({ socket, dashboardStatus }) {
 
         {/* Dashboard Controls */}
         <DashboardControls onSendCommand={sendCommand} disabled={!isConnected} />
+
+        {/* QR Code Display */}
+        <div className="qr-display">
+          <h2>QR Code Scanner</h2>
+          <div className="qr-content">
+            {qrValue ? (
+              <>
+                <div className="qr-value">{qrValue}</div>
+                <div className="qr-timestamp">
+                  Last updated: {qrTimestamp ? new Date(qrTimestamp).toLocaleTimeString() : "N/A"}
+                </div>
+              </>
+            ) : (
+              <div className="qr-empty">No QR code scanned yet</div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="right-panel">

@@ -925,6 +925,52 @@ code {
   font-family: 'Courier New', Courier, monospace;
 }
 
+/* QR Code Display */
+.qr-display {
+  background: #2a2a2a;
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.qr-display h2 {
+  font-size: 1.3rem;
+  margin-bottom: 1rem;
+  color: #fff;
+}
+
+.qr-content {
+  background: #1a1a1a;
+  border-radius: 8px;
+  padding: 1.5rem;
+  text-align: center;
+}
+
+.qr-value {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: #51cf66;
+  word-break: break-all;
+  padding: 1rem;
+  background: #2a2a2a;
+  border-radius: 8px;
+  border: 2px solid #51cf66;
+  box-shadow: 0 0 15px rgba(81, 207, 102, 0.2);
+}
+
+.qr-timestamp {
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: #888;
+}
+
+.qr-empty {
+  padding: 2rem;
+  color: #888;
+  font-style: italic;
+}
+
 /* Responsive for Robot Control Page */
 @media (max-width: 1200px) {
   .robot-control-page {
