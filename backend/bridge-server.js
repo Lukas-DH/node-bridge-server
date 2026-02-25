@@ -38,6 +38,12 @@ const state = {
   serialPort: null,
   currentHandshake: null,
   pendingResponse: null,
+  // Dashboard server state
+  dashboardConnected: false,
+  dashboardConnecting: false,
+  dashboardSocket: null,
+  dashboardIp: null,
+  dashboardPendingCommand: null,
 };
 
 // Express app for HTTP + WebSocket
@@ -79,6 +85,11 @@ function emitStatus() {
     robot: state.robotConnected ? "connected" : "disconnected",
     serial: state.serialConnected ? "connected" : "disconnected",
     server: "running",
+    dashboard: state.dashboardConnected
+      ? "connected"
+      : state.dashboardConnecting
+      ? "connecting"
+      : "disconnected",
   };
 
   io.emit("status", status);
@@ -299,6 +310,126 @@ function sendToPipette(commandStr) {
 }
 
 // ============================================================================
+// UR DASHBOARD SERVER TCP CLIENT
+// ============================================================================
+
+const DASHBOARD_PORT = 29999;
+
+function connectToDashboard(robotIp) {
+  return new Promise((resolve, reject) => {
+    if (state.dashboardSocket) {
+      disconnectFromDashboard();
+    }
+
+    state.dashboardConnecting = true;
+    state.dashboardIp = robotIp;
+    emitStatus();
+
+    log("info", "dashboard", `Connecting to UR Dashboard Server at ${robotIp}:${DASHBOARD_PORT}`);
+
+    const socket = new net.Socket();
+
+    socket.setTimeout(5000);
+
+    socket.connect(DASHBOARD_PORT, robotIp, () => {
+      state.dashboardConnected = true;
+      state.dashboardConnecting = false;
+      state.dashboardSocket = socket;
+      log("info", "dashboard", `Connected to UR Dashboard Server at ${robotIp}`);
+      emitStatus();
+      resolve(true);
+    });
+
+    socket.on("data", (data) => {
+      const response = data.toString().trim();
+      log("response", "dashboard", `Dashboard response: ${response}`);
+
+      // Emit response to all clients
+      io.emit("dashboard-response", {
+        timestamp: new Date().toISOString(),
+        response,
+        success: true,
+      });
+
+      // Resolve pending command if any
+      if (state.dashboardPendingCommand) {
+        state.dashboardPendingCommand.resolve({ success: true, response });
+        state.dashboardPendingCommand = null;
+      }
+    });
+
+    socket.on("timeout", () => {
+      log("error", "dashboard", "Connection timeout");
+      state.dashboardConnecting = false;
+      socket.destroy();
+      emitStatus();
+      reject(new Error("Connection timeout"));
+    });
+
+    socket.on("error", (err) => {
+      log("error", "dashboard", `Dashboard socket error: ${err.message}`);
+      state.dashboardConnected = false;
+      state.dashboardConnecting = false;
+      state.dashboardSocket = null;
+      emitStatus();
+      reject(err);
+    });
+
+    socket.on("close", () => {
+      log("info", "dashboard", "Dashboard connection closed");
+      state.dashboardConnected = false;
+      state.dashboardConnecting = false;
+      state.dashboardSocket = null;
+      emitStatus();
+    });
+  });
+}
+
+function disconnectFromDashboard() {
+  if (state.dashboardSocket) {
+    state.dashboardSocket.destroy();
+    state.dashboardSocket = null;
+  }
+  state.dashboardConnected = false;
+  state.dashboardConnecting = false;
+  state.dashboardIp = null;
+  log("info", "dashboard", "Disconnected from Dashboard Server");
+  emitStatus();
+}
+
+function sendDashboardCommand(command) {
+  return new Promise((resolve, reject) => {
+    if (!state.dashboardSocket || !state.dashboardConnected) {
+      reject(new Error("Not connected to Dashboard Server"));
+      return;
+    }
+
+    log("command", "dashboard", `Sending dashboard command: ${command}`);
+
+    // Set up pending command with timeout
+    const timeout = setTimeout(() => {
+      if (state.dashboardPendingCommand) {
+        state.dashboardPendingCommand = null;
+        reject(new Error("Command timeout"));
+      }
+    }, 5000);
+
+    state.dashboardPendingCommand = {
+      resolve: (result) => {
+        clearTimeout(timeout);
+        resolve(result);
+      },
+      reject: (err) => {
+        clearTimeout(timeout);
+        reject(err);
+      },
+    };
+
+    state.dashboardSocket.write(command + "\n");
+  });
+}
+
+// ============================================================================
 // TCP SERVER FOR ROBOT
 // ============================================================================
 
@@ -380,6 +511,44 @@ io.on("connection", (socket) => {
     log("command", "dashboard", `Test command: ${command}`);
     const response = await sendToPipette(command);
     socket.emit("command-response", response);
+  });
+
+  // Handle dashboard server connection
+  socket.on("dashboard-connect", async (robotIp) => {
+    try {
+      await connectToDashboard(robotIp);
+      socket.emit("dashboard-command-response", {
+        success: true,
+        response: `Connected to ${robotIp}`,
+      });
+    } catch (err) {
+      socket.emit("dashboard-command-response", {
+        success: false,
+        error: err.message,
+      });
+    }
+  });
+
+  // Handle dashboard server disconnection
+  socket.on("dashboard-disconnect", () => {
+    disconnectFromDashboard();
+    socket.emit("dashboard-command-response", {
+      success: true,
+      response: "Disconnected",
+    });
+  });
+
+  // Handle dashboard commands
+  socket.on("dashboard-command", async (command) => {
+    try {
+      const result = await sendDashboardCommand(command);
+      socket.emit("dashboard-command-response", result);
+    } catch (err) {
+      socket.emit("dashboard-command-response", {
+        success: false,
+        error: err.message,
+      });
+    }
   });
 });
 
