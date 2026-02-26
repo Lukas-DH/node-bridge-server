@@ -4,9 +4,11 @@ import { io } from "socket.io-client";
 import ConnectionStatus from "./components/ConnectionStatus";
 import Home from "./pages/Home";
 import RobotControl from "./pages/RobotControl";
+import OperatorPanel from "./pages/OperatorPanel";
 
 const BACKEND_URL = "http://localhost:3001";
 // const BACKEND_URL = "http://192.168.1.88:3001";
+// const BACKEND_URL = "http://192.168.1.20:3001";
 
 export const SocketContext = createContext(null);
 
@@ -24,6 +26,7 @@ function App() {
   const [handshakeSteps, setHandshakeSteps] = useState([]);
   const [connected, setConnected] = useState(false);
   const location = useLocation();
+  const isOperatorPage = location.pathname === "/operator";
 
   useEffect(() => {
     // Connect to backend WebSocket
@@ -77,7 +80,11 @@ function App() {
 
     // Listen for QR code updates
     newSocket.on("qr-update", (data) => {
-      setStatus((prev) => ({ ...prev, qrValue: data.value, qrTimestamp: data.timestamp }));
+      setStatus((prev) => ({
+        ...prev,
+        qrValue: data.value,
+        qrTimestamp: data.timestamp,
+      }));
     });
 
     setSocket(newSocket);
@@ -100,6 +107,26 @@ function App() {
   const clearHandshake = () => {
     setHandshakeSteps([]);
   };
+
+  // Render operator panel without header/footer for kiosk mode
+  if (isOperatorPage) {
+    return (
+      <SocketContext.Provider value={socket}>
+        <Routes>
+          <Route
+            path="/operator"
+            element={
+              <OperatorPanel
+                socket={socket}
+                qrValue={status.qrValue}
+                dashboardStatus={status.dashboard}
+              />
+            }
+          />
+        </Routes>
+      </SocketContext.Provider>
+    );
+  }
 
   return (
     <SocketContext.Provider value={socket}>

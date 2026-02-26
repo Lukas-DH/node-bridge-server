@@ -497,26 +497,19 @@ const qrServer = net.createServer((socket) => {
   log("info", "qr", `QR client connected: ${clientAddr}`);
   state.qrConnected = true;
   state.qrClient = socket;
-  emitStatus();
 
   socket.on("data", (data) => {
     const qrValue = data.toString("utf-8").trim();
+    state.currentQrValue = qrValue;
+    const timestamp = new Date().toISOString();
 
-    // Deduplicate: only log and emit if value changed
-    if (qrValue !== state.currentQrValue) {
-      state.currentQrValue = qrValue;
-      const timestamp = new Date().toISOString();
+    log("info", "qr", `QR code received: ${qrValue}`);
 
-      log("info", "qr", `QR code received: ${qrValue}`);
+    io.emit("qr-update", {
+      value: qrValue,
+      timestamp: timestamp,
+    });
 
-      // Emit to all dashboard clients
-      io.emit("qr-update", {
-        value: qrValue,
-        timestamp: timestamp,
-      });
-    }
-
-    // Always send OK response to robot
     socket.write("OK\n");
   });
 
@@ -524,14 +517,12 @@ const qrServer = net.createServer((socket) => {
     log("info", "qr", `QR client disconnected: ${clientAddr}`);
     state.qrConnected = false;
     state.qrClient = null;
-    emitStatus();
   });
 
   socket.on("error", (err) => {
     log("error", "qr", `QR socket error: ${err.message}`);
     state.qrConnected = false;
     state.qrClient = null;
-    emitStatus();
   });
 });
 

@@ -1006,3 +1006,611 @@ code {
     flex-direction: column;
   }
 }
+
+/* ================================
+   Operator Panel - Industrial UI
+   ================================ */
+
+.operator-panel {
+  min-height: 100vh;
+  background: #f8f9fa;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.operator-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3rem;
+  max-width: 900px;
+  width: 100%;
+}
+
+/* LED Displays Section */
+.operator-displays {
+  display: flex;
+  gap: 2rem;
+  width: 100%;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.led-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.led-display-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #495057;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding-left: 0.5rem;
+}
+
+.led-display-screen {
+  background: #1a1a1a;
+  border: 3px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 0.75rem 1rem;
+  min-width: 280px;
+  max-width: 320px;
+  overflow: hidden;
+  position: relative;
+  box-shadow:
+    inset 0 2px 8px rgba(0, 0, 0, 0.8),
+    0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.led-display-screen::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(0, 50, 0, 0.1) 0%,
+    transparent 50%,
+    rgba(0, 0, 0, 0.2) 100%
+  );
+  pointer-events: none;
+}
+
+.led-display-text {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #39ff14;
+  text-shadow:
+    0 0 5px #39ff14,
+    0 0 10px #39ff14,
+    0 0 20px rgba(57, 255, 20, 0.5);
+  white-space: nowrap;
+  display: inline-block;
+  letter-spacing: 1px;
+}
+
+/* Auto-scroll animation for long text */
+.led-display-text.led-scroll {
+  animation: led-scroll 8s linear infinite;
+  padding-right: 3rem;
+}
+
+@keyframes led-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  10% {
+    transform: translateX(0);
+  }
+  90% {
+    transform: translateX(calc(-100% + 280px));
+  }
+  100% {
+    transform: translateX(calc(-100% + 280px));
+  }
+}
+
+/* Buttons Section */
+.operator-buttons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+}
+
+.operator-button-row {
+  display: flex;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ================================
+   Schneider XB7NH35 Style Buttons
+   Flat matte surface with warm center glow
+   ================================ */
+
+/* Chrome bezel container */
+.industrial-button {
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  transition: all 0.1s ease;
+  position: relative;
+  /* Flat dark bezel */
+  background: #2a2a2a;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+  padding: 4px;
+}
+
+/* Inner flat matte lens with center glow */
+.industrial-button::before {
+  content: '';
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  right: 4px;
+  bottom: 4px;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: all 0.15s ease;
+}
+
+.industrial-button:hover:not(:disabled) {
+  transform: scale(1.03);
+}
+
+.industrial-button:active:not(:disabled),
+.industrial-button.active {
+  transform: scale(0.96);
+}
+
+/* Disabled state - backlight OFF */
+.industrial-button:disabled {
+  cursor: not-allowed;
+}
+
+.industrial-button .button-icon {
+  font-size: 1.5rem;
+  line-height: 1;
+  position: relative;
+  z-index: 1;
+  opacity: 0.9;
+}
+
+.industrial-button .button-label {
+  font-size: 0.55rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  position: relative;
+  z-index: 1;
+  opacity: 0.9;
+}
+
+/* Large Play Button */
+.industrial-button-large {
+  width: 160px;
+  height: 160px;
+  padding: 6px;
+}
+
+.industrial-button-large::before {
+  top: 6px;
+  left: 6px;
+  right: 6px;
+  bottom: 6px;
+}
+
+.industrial-button-large .button-icon {
+  font-size: 3.5rem;
+}
+
+.industrial-button-large .button-label {
+  font-size: 1rem;
+  letter-spacing: 1px;
+}
+
+/* ================================
+   Color variants - ILLUMINATED (enabled)
+   Flat matte with warm center glow fading outward
+   ================================ */
+
+/* Green Button - Illuminated */
+.industrial-button-green {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.industrial-button-green::before {
+  background: radial-gradient(
+    circle at center,
+    #7ddf7d 0%,
+    #4CAF50 25%,
+    #3d9141 50%,
+    #2d7d32 75%,
+    #256b29 100%
+  );
+}
+
+.industrial-button-green:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #98e898 0%,
+    #5cbf5c 25%,
+    #4CAF50 50%,
+    #3d9141 75%,
+    #2d7d32 100%
+  );
+}
+
+.industrial-button-green:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-green:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #3a4a3a 0%,
+    #2d3d2d 50%,
+    #1f2f1f 100%
+  );
+}
+
+/* Yellow Button - Illuminated */
+.industrial-button-yellow {
+  color: #1a1a1a;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
+}
+
+.industrial-button-yellow::before {
+  background: radial-gradient(
+    circle at center,
+    #ffe066 0%,
+    #ffca28 25%,
+    #f9a825 50%,
+    #e09000 75%,
+    #c67c00 100%
+  );
+}
+
+.industrial-button-yellow:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #ffec80 0%,
+    #ffd54f 25%,
+    #ffca28 50%,
+    #f9a825 75%,
+    #e09000 100%
+  );
+}
+
+.industrial-button-yellow:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-yellow:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #4a4535 0%,
+    #3a3528 50%,
+    #2a251a 100%
+  );
+}
+
+/* Red Button - Illuminated */
+.industrial-button-red {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.industrial-button-red::before {
+  background: radial-gradient(
+    circle at center,
+    #ff7070 0%,
+    #f44336 25%,
+    #e53935 50%,
+    #c62828 75%,
+    #a31c1c 100%
+  );
+}
+
+.industrial-button-red:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #ff8a8a 0%,
+    #ff5252 25%,
+    #f44336 50%,
+    #e53935 75%,
+    #c62828 100%
+  );
+}
+
+.industrial-button-red:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-red:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #4a3535 0%,
+    #3a2828 50%,
+    #2a1a1a 100%
+  );
+}
+
+/* Blue Button - Illuminated */
+.industrial-button-blue {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.industrial-button-blue::before {
+  background: radial-gradient(
+    circle at center,
+    #64b5f6 0%,
+    #2196F3 25%,
+    #1e88e5 50%,
+    #1565c0 75%,
+    #0d47a1 100%
+  );
+}
+
+.industrial-button-blue:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #90caf9 0%,
+    #42a5f5 25%,
+    #2196F3 50%,
+    #1e88e5 75%,
+    #1565c0 100%
+  );
+}
+
+.industrial-button-blue:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-blue:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #354550 0%,
+    #283540 50%,
+    #1a252f 100%
+  );
+}
+
+/* Purple Button - Illuminated */
+.industrial-button-purple {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.industrial-button-purple::before {
+  background: radial-gradient(
+    circle at center,
+    #ce93d8 0%,
+    #ab47bc 25%,
+    #9c27b0 50%,
+    #7b1fa2 75%,
+    #6a1b9a 100%
+  );
+}
+
+.industrial-button-purple:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #e1bee7 0%,
+    #ba68c8 25%,
+    #ab47bc 50%,
+    #9c27b0 75%,
+    #7b1fa2 100%
+  );
+}
+
+.industrial-button-purple:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-purple:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #403545 0%,
+    #302535 50%,
+    #201525 100%
+  );
+}
+
+/* Cyan Button - Illuminated */
+.industrial-button-cyan {
+  color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.industrial-button-cyan::before {
+  background: radial-gradient(
+    circle at center,
+    #4dd0e1 0%,
+    #26c6da 25%,
+    #00bcd4 50%,
+    #00acc1 75%,
+    #00838f 100%
+  );
+}
+
+.industrial-button-cyan:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #80deea 0%,
+    #4dd0e1 25%,
+    #26c6da 50%,
+    #00bcd4 75%,
+    #00acc1 100%
+  );
+}
+
+.industrial-button-cyan:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-cyan:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #354550 0%,
+    #283540 50%,
+    #1a252f 100%
+  );
+}
+
+/* Black Button - No illumination (TBA/disabled) */
+.industrial-button-black {
+  color: #666;
+  text-shadow: none;
+}
+
+.industrial-button-black::before {
+  background: radial-gradient(
+    circle at center,
+    #3a3a3a 0%,
+    #2a2a2a 50%,
+    #1a1a1a 100%
+  );
+}
+
+.industrial-button-black:disabled {
+  color: #444;
+}
+
+.industrial-button-black:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #2a2a2a 0%,
+    #1a1a1a 50%,
+    #101010 100%
+  );
+}
+
+/* Robot IP Display */
+.operator-robot-ip {
+  font-size: 0.8rem;
+  color: #6c757d;
+  font-family: 'Courier New', Courier, monospace;
+  padding: 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 4px;
+  margin-top: 1rem;
+}
+
+/* Responsive for Operator Panel */
+@media (max-width: 900px) {
+  .operator-displays {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .operator-button-row {
+    justify-content: center;
+  }
+}
+
+@media (max-width: 600px) {
+  .operator-panel {
+    padding: 1rem;
+  }
+
+  .operator-content {
+    gap: 2rem;
+  }
+
+  .led-display-screen {
+    min-width: 240px;
+    max-width: 280px;
+  }
+
+  .led-display-text {
+    font-size: 1.2rem;
+  }
+
+  @keyframes led-scroll {
+    0% {
+      transform: translateX(0);
+    }
+    10% {
+      transform: translateX(0);
+    }
+    90% {
+      transform: translateX(calc(-100% + 240px));
+    }
+    100% {
+      transform: translateX(calc(-100% + 240px));
+    }
+  }
+
+  .industrial-button-large {
+    width: 130px;
+    height: 130px;
+    padding: 5px;
+  }
+
+  .industrial-button-large::before {
+    top: 5px;
+    left: 5px;
+    right: 5px;
+    bottom: 5px;
+  }
+
+  .industrial-button-large .button-icon {
+    font-size: 2.8rem;
+  }
+
+  .industrial-button-large .button-label {
+    font-size: 0.85rem;
+  }
+
+  .industrial-button {
+    width: 70px;
+    height: 70px;
+    padding: 4px;
+  }
+
+  .industrial-button::before {
+    top: 4px;
+    left: 4px;
+    right: 4px;
+    bottom: 4px;
+  }
+
+  .industrial-button .button-icon {
+    font-size: 1.3rem;
+  }
+
+  .industrial-button .button-label {
+    font-size: 0.5rem;
+  }
+
+  .operator-button-row {
+    gap: 1rem;
+  }
+}
