@@ -22,7 +22,7 @@ import cors from "cors";
 
 // Configuration
 const CONFIG = {
-  serialPort: process.env.SERIAL_PORT || "/dev/tty.usbmodem438812441",
+  serialPort: process.env.SERIAL_PORT || "/dev/ttyACM0",
   serialBaudRate: 230400,
   tcpPort: 5001,
   qrPort: 5002,
