@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import caringLogo from "../assets/caring-ivf.png";
 
 const ROBOT_IP = "192.168.1.95";
 
@@ -10,11 +11,37 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const statusContainerRef = useRef(null);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [startMode, setStartMode] = useState(false);
+  const [powerOnMode, setPowerOnMode] = useState(false);
+  const powerOnIntervalRef = useRef(null);
 
   useEffect(() => {
     if (socket) {
       socket.on("dashboard-response", (data) => {
         const response = data.response || data.toString();
+
+        // Handle power-on sequence polling
+        if (powerOnMode) {
+          const responseLower = response.toLowerCase();
+
+          // Check if this is a robotmode response indicating idle state
+          if (responseLower.includes("idle")) {
+            // Robot is ready - send brake release
+            clearInterval(powerOnIntervalRef.current);
+            powerOnIntervalRef.current = null;
+            setStatus("RELEASING BRAKES...");
+            socket.emit("dashboard-command", "brake release");
+            setPowerOnMode(false);
+          } else if (
+            responseLower.includes("power_off") ||
+            responseLower.includes("power_on") ||
+            responseLower.includes("booting")
+          ) {
+            // Still in progress - update status
+            setStatus(`POWER ON: ${response.toUpperCase()}`);
+          }
+          return; // Don't process further during power sequence
+        }
+
         setStatus(response);
 
         // If we just loaded a program via START, now play it
@@ -27,9 +54,12 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
 
       return () => {
         socket.off("dashboard-response");
+        if (powerOnIntervalRef.current) {
+          clearInterval(powerOnIntervalRef.current);
+        }
       };
     }
-  }, [socket]);
+  }, [socket, powerOnMode]);
 
   // Check if status text overflows and needs scrolling
   useEffect(() => {
@@ -43,9 +73,22 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   // Send pending command when connected
   useEffect(() => {
     if (dashboardStatus === "connected" && pendingCommand) {
-      setStatus(`SENDING: ${pendingCommand.toUpperCase()}`);
-      socket.emit("dashboard-command", pendingCommand);
-      setPendingCommand(null);
+      if (pendingCommand === "__power_on_sequence__") {
+        setPendingCommand(null);
+        // Trigger power sequence now that we're connected
+        setStatus("POWERING ON...");
+        setPowerOnMode(true);
+        socket.emit("dashboard-command", "power on");
+        setTimeout(() => {
+          powerOnIntervalRef.current = setInterval(() => {
+            socket.emit("dashboard-command", "robotmode");
+          }, 1500);
+        }, 1000);
+      } else {
+        setStatus(`SENDING: ${pendingCommand.toUpperCase()}`);
+        socket.emit("dashboard-command", pendingCommand);
+        setPendingCommand(null);
+      }
     }
   }, [dashboardStatus, pendingCommand, socket]);
 
@@ -63,6 +106,34 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
       // Already connected - send directly
       setStatus(`SENDING: ${command.toUpperCase()}`);
       socket.emit("dashboard-command", command);
+    }
+  };
+
+  const handlePowerOn = () => {
+    if (!socket) return;
+
+    setActiveButton("poweron");
+    setTimeout(() => setActiveButton(null), 200);
+
+    const startPowerSequence = () => {
+      setStatus("POWERING ON...");
+      setPowerOnMode(true);
+      socket.emit("dashboard-command", "power on");
+
+      // Start polling for robot mode after initial command
+      setTimeout(() => {
+        powerOnIntervalRef.current = setInterval(() => {
+          socket.emit("dashboard-command", "robotmode");
+        }, 1500); // Poll every 1.5 seconds
+      }, 1000); // Wait 1 second before starting to poll
+    };
+
+    if (dashboardStatus !== "connected") {
+      setStatus("CONNECTING...");
+      setPendingCommand("__power_on_sequence__"); // Special marker
+      socket.emit("dashboard-connect", ROBOT_IP);
+    } else {
+      startPowerSequence();
     }
   };
 
@@ -122,13 +193,13 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
           {/* Large Play button */}
 
           <button
-            className={`industrial-button industrial-button-cyan industrial-button-large ${
+            className={`industrial-button industrial-button-white industrial-button-large ${
               activeButton === "start" ? "active" : ""
             }`}
             onClick={handleStart}
             disabled={!socket}
           >
-            <span className="button-icon">↻</span>
+            <img src={caringLogo} alt="Start" className="button-logo" />
             <span className="button-label">START</span>
           </button>
 
@@ -165,20 +236,23 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               <span className="button-icon">⏹</span>
               <span className="button-label">STOP</span>
             </button>
-
+          </div>
+          <div className="operator-button-row">
             <button
               className={`industrial-button industrial-button-blue ${
                 activeButton === "poweron" ? "active" : ""
               }`}
-              onClick={() => handleCommand("power on", "poweron")}
-              disabled={!socket}
+              onClick={handlePowerOn}
+              disabled={!socket || powerOnMode}
             >
               <span className="button-icon">⚡</span>
-              <span className="button-label">PWR ON</span>
+              <span className="button-label">
+                {powerOnMode ? "..." : "PWR ON"}
+              </span>
             </button>
 
             <button
-              className={`industrial-button industrial-button-purple ${
+              className={`industrial-button industrial-button-cyan ${
                 activeButton === "poweroff" ? "active" : ""
               }`}
               onClick={() => handleCommand("power off", "poweroff")}

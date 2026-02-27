@@ -1512,6 +1512,62 @@ code {
   );
 }
 
+/* White Button - Illuminated */
+.industrial-button-white {
+  color: #333;
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+}
+
+.industrial-button-white::before {
+  background: radial-gradient(
+    circle at center,
+    #ffffff 0%,
+    #f5f5f5 25%,
+    #eeeeee 50%,
+    #e0e0e0 75%,
+    #d0d0d0 100%
+  );
+}
+
+.industrial-button-white:hover:not(:disabled)::before {
+  background: radial-gradient(
+    circle at center,
+    #ffffff 0%,
+    #ffffff 25%,
+    #f5f5f5 50%,
+    #eeeeee 75%,
+    #e0e0e0 100%
+  );
+}
+
+.industrial-button-white:disabled {
+  color: #555;
+  text-shadow: none;
+}
+
+.industrial-button-white:disabled::before {
+  background: radial-gradient(
+    circle at center,
+    #4a4a4a 0%,
+    #3a3a3a 50%,
+    #2a2a2a 100%
+  );
+}
+
+/* Button Logo Image */
+.industrial-button .button-logo {
+  width: 60%;
+  height: 60%;
+  object-fit: contain;
+  position: relative;
+  z-index: 1;
+}
+
+.industrial-button-large .button-logo {
+  width: 65%;
+  height: 65%;
+}
+
 /* Robot IP Display */
 .operator-robot-ip {
   font-size: 0.8rem;
