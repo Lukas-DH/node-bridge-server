@@ -1140,8 +1140,8 @@ code {
 
 /* Chrome bezel container */
 .industrial-button {
-  width: 90px;
-  height: 90px;
+  width: 140px;
+  height: 140px;
   border-radius: 50%;
   border: none;
   cursor: pointer;
@@ -1187,7 +1187,7 @@ code {
 }
 
 .industrial-button .button-icon {
-  font-size: 1.5rem;
+  font-size: 2.4rem;
   line-height: 1;
   position: relative;
   z-index: 1;
@@ -1195,7 +1195,7 @@ code {
 }
 
 .industrial-button .button-label {
-  font-size: 0.55rem;
+  font-size: 0.85rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.3px;
@@ -1206,8 +1206,8 @@ code {
 
 /* Large Play Button */
 .industrial-button-large {
-  width: 160px;
-  height: 160px;
+  width: 220px;
+  height: 220px;
   padding: 6px;
 }
 
@@ -1219,11 +1219,11 @@ code {
 }
 
 .industrial-button-large .button-icon {
-  font-size: 3.5rem;
+  font-size: 5rem;
 }
 
 .industrial-button-large .button-label {
-  font-size: 1rem;
+  font-size: 1.3rem;
   letter-spacing: 1px;
 }
 
@@ -1625,8 +1625,8 @@ code {
   }
 
   .industrial-button-large {
-    width: 130px;
-    height: 130px;
+    width: 180px;
+    height: 180px;
     padding: 5px;
   }
 
@@ -1646,8 +1646,8 @@ code {
   }
 
   .industrial-button {
-    width: 70px;
-    height: 70px;
+    width: 110px;
+    height: 110px;
     padding: 4px;
   }
 
