@@ -12,6 +12,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const [shouldScroll, setShouldScroll] = useState(false);
   const [startMode, setStartMode] = useState(false);
   const [powerOnMode, setPowerOnMode] = useState(false);
+  const [isPoweredOn, setIsPoweredOn] = useState(false);
   const powerOnIntervalRef = useRef(null);
 
   useEffect(() => {
@@ -19,10 +20,16 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
       socket.on("dashboard-response", (data) => {
         const response = data.response || data.toString();
 
+        // Detect power state from robotmode responses
+        const responseLower = response.toLowerCase();
+        if (responseLower.includes("power_off")) {
+          setIsPoweredOn(false);
+        } else if (responseLower.includes("idle")) {
+          setIsPoweredOn(true);
+        }
+
         // Handle power-on sequence polling
         if (powerOnMode) {
-          const responseLower = response.toLowerCase();
-
           // Check if this is a robotmode response indicating idle state
           if (responseLower.includes("idle")) {
             // Robot is ready - send brake release
@@ -197,7 +204,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               activeButton === "start" ? "active" : ""
             }`}
             onClick={handleStart}
-            disabled={!socket}
+            disabled={!socket || !isPoweredOn}
           >
             <img src={caringLogo} alt="Start" className="button-logo" />
             <span className="button-label">START</span>
@@ -210,7 +217,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "play" ? "active" : ""
               }`}
               onClick={() => handleCommand("play", "play")}
-              disabled={!socket}
+              disabled={!socket || !isPoweredOn}
             >
               <span className="button-icon">▶</span>
               <span className="button-label">PLAY</span>
@@ -220,7 +227,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "pause" ? "active" : ""
               }`}
               onClick={() => handleCommand("pause", "pause")}
-              disabled={!socket}
+              disabled={!socket || !isPoweredOn}
             >
               <span className="button-icon">⏸</span>
               <span className="button-label">PAUSE</span>
@@ -231,7 +238,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "stop" ? "active" : ""
               }`}
               onClick={() => handleCommand("stop", "stop")}
-              disabled={!socket}
+              disabled={!socket || !isPoweredOn}
             >
               <span className="button-icon">⏹</span>
               <span className="button-label">STOP</span>
@@ -243,7 +250,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweron" ? "active" : ""
               }`}
               onClick={handlePowerOn}
-              disabled={!socket || powerOnMode}
+              disabled={!socket || powerOnMode || isPoweredOn}
             >
               <span className="button-icon">⚡</span>
               <span className="button-label">
@@ -256,7 +263,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweroff" ? "active" : ""
               }`}
               onClick={() => handleCommand("power off", "poweroff")}
-              disabled={!socket}
+              disabled={!socket || !isPoweredOn}
             >
               <span className="button-icon">○</span>
               <span className="button-label">PWR OFF</span>
