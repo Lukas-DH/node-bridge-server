@@ -11,7 +11,9 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const statusContainerRef = useRef(null);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [startMode, setStartMode] = useState(false);
+  const [errorModal, setErrorModal] = useState(null); // null = hidden, string = error message
   const [powerOnMode, setPowerOnMode] = useState(false); //change back to false
+  const [bootStartMode, setBootStartMode] = useState(false);
   const [isPoweredOn, setIsPoweredOn] = useState(false);
   const [programState, setProgramState] = useState(null); // "playing", "paused", "stopped"
   const [robotMode, setRobotMode] = useState(null);
@@ -34,6 +36,12 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         } else if (responseLower.includes("running")) {
           setIsPoweredOn(true);
           setRobotMode("RUNNING");
+          if (bootStartMode) {
+            setBootStartMode(false);
+            setStartMode(true);
+            setStatus("LOADING DEFAULT PROGRAM...");
+            socket.emit("dashboard-command", "load __working.urp");
+          }
         } else if (responseLower.includes("power_on")) {
           setRobotMode("POWER ON");
         } else if (responseLower.includes("booting")) {
@@ -60,6 +68,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
             powerOnIntervalRef.current = null;
             setStatus("RELEASING BRAKES...");
             socket.emit("dashboard-command", "brake release");
+            setBootStartMode(true);
             setPowerOnMode(false);
           } else if (
             responseLower.includes("power_off") ||
@@ -82,11 +91,23 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         setStatus(response);
         // }
 
-        // If we just loaded a program via START, now play it
+        // If we just loaded a program via START, now play it (unless load failed)
         if (startMode && data.success) {
           setStartMode(false);
-          setStatus("STARTING PROGRAM...");
-          socket.emit("dashboard-command", "play");
+          if (responseLower.startsWith("file not found")) {
+            setStatus(`ERROR: ${response.toUpperCase()}`);
+            setErrorModal(response);
+          } else {
+            setStatus("STARTING PROGRAM...");
+            socket.emit("dashboard-command", "play");
+          }
+        }
+
+        // Auto-load __ready.urp when __working.urp stops
+        if (responseLower.includes("stopped __working")) {
+          setStartMode(true);
+          setStatus("LOADING READY PROGRAM...");
+          socket.emit("dashboard-command", "load __ready.urp");
         }
       });
 
@@ -97,7 +118,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         }
       };
     }
-  }, [socket, powerOnMode, startMode]);
+  }, [socket, powerOnMode, startMode, bootStartMode]);
 
   // Check if status text overflows and needs scrolling
   useEffect(() => {
@@ -304,6 +325,15 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
           Robot: {ROBOT_IP} ({dashboardStatus})
         </div>
       </div>
+      {errorModal && (
+        <div className="error-modal-overlay" onClick={() => setErrorModal(null)}>
+          <div className="error-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 className="error-modal-title">Program Not Found</h2>
+            <p className="error-modal-message">{errorModal}</p>
+            <button className="error-modal-ok" onClick={() => setErrorModal(null)}>OK</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
