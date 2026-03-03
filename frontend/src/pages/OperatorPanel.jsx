@@ -1,22 +1,22 @@
 import { useState, useEffect, useRef } from "react";
-import caringLogo from "../assets/caring-ivf.png";
+import dishbotLogo from "../assets/dishbot.jpg";
+// import caringLogo from "../assets/caring-ivf.png";
 
 const ROBOT_IP = "192.168.1.95";
 
 function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const [activeButton, setActiveButton] = useState(null);
   const [status, setStatus] = useState("READY");
-  const [pendingCommand, setPendingCommand] = useState(null);
   const statusRef = useRef(null);
   const statusContainerRef = useRef(null);
   const [shouldScroll, setShouldScroll] = useState(false);
   const [startMode, setStartMode] = useState(false);
-  const [powerOnMode, setPowerOnMode] = useState(false);
+  const [powerOnMode, setPowerOnMode] = useState(false); //change back to false
   const [isPoweredOn, setIsPoweredOn] = useState(false);
   const [programState, setProgramState] = useState(null); // "playing", "paused", "stopped"
+  const [robotMode, setRobotMode] = useState(null);
   const powerOnIntervalRef = useRef(null);
   const pollingIntervalRef = useRef(null);
-  const pendingPollingResponses = useRef(0);
 
   useEffect(() => {
     if (socket) {
@@ -24,14 +24,22 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         const response = data.response || data.toString();
         const responseLower = response.toLowerCase();
 
-        // Detect power state from robotmode responses
+        // Detect power/robot state from robotmode responses
         if (responseLower.includes("power_off")) {
           setIsPoweredOn(false);
-        } else if (
-          responseLower.includes("idle") ||
-          responseLower.includes("running")
-        ) {
+          setRobotMode("POWER OFF");
+        } else if (responseLower.includes("idle")) {
           setIsPoweredOn(true);
+          setRobotMode("IDLE");
+        } else if (responseLower.includes("running")) {
+          setIsPoweredOn(true);
+          setRobotMode("RUNNING");
+        } else if (responseLower.includes("power_on")) {
+          setRobotMode("POWER ON");
+        } else if (responseLower.includes("booting")) {
+          setRobotMode("BOOTING");
+        } else if (responseLower.includes("brake releasing")) {
+          setRobotMode("BRAKE RELEASING");
         }
 
         // Detect program state from programstate responses
@@ -64,9 +72,8 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
           return; // Don't process further during power sequence
         }
 
-        // Don't update status display during background polling
-        if (pendingPollingResponses.current > 0) {
-          pendingPollingResponses.current--;
+        // Don't show robotmode polling responses in the status display
+        if (responseLower.includes("robotmode")) {
           return;
         }
 
@@ -88,9 +95,6 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         if (powerOnIntervalRef.current) {
           clearInterval(powerOnIntervalRef.current);
         }
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-        }
       };
     }
   }, [socket, powerOnMode, startMode]);
@@ -100,104 +104,60 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
     if (statusRef.current && statusContainerRef.current) {
       const textWidth = statusRef.current.scrollWidth;
       const containerWidth = statusContainerRef.current.clientWidth;
-      // setShouldScroll(textWidth > containerWidth);
+      setShouldScroll(textWidth > containerWidth);
     }
   }, [status]);
 
   // Set up status polling when connected
   useEffect(() => {
     if (dashboardStatus === "connected" && socket && !powerOnMode) {
-      // Initial query
-      socket.emit("dashboard-command", "robotmode");
-      socket.emit("dashboard-command", "programstate");
+      const queries = ["robotmode", "programstate"];
+      let i = 0;
+      let cancelled = false;
 
-      // Set up polling every 1.5 seconds
-      pollingIntervalRef.current = setInterval(() => {
-        pendingPollingResponses.current += 2; // Expecting 2 responses
-        socket.emit("dashboard-command", "robotmode");
-        socket.emit("dashboard-command", "programstate");
-      }, 1500);
+      const tick = () => {
+        if (cancelled) return;
+        socket.volatile.emit("dashboard-command", queries[i % 2]);
+        i++;
+        pollingIntervalRef.current = setTimeout(tick, 500);
+      };
+
+      tick();
 
       return () => {
-        if (pollingIntervalRef.current) {
-          clearInterval(pollingIntervalRef.current);
-          pollingIntervalRef.current = null;
-        }
+        cancelled = true;
+        clearTimeout(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       };
     } else {
       // Clear polling when disconnected
       if (pollingIntervalRef.current) {
-        clearInterval(pollingIntervalRef.current);
+        clearTimeout(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
     }
   }, [dashboardStatus, socket, powerOnMode]);
 
-  // Send pending command when connected
-  useEffect(() => {
-    if (dashboardStatus === "connected" && pendingCommand) {
-      if (pendingCommand === "__power_on_sequence__") {
-        setPendingCommand(null);
-        // Trigger power sequence now that we're connected
-        setStatus("POWERING ON...");
-        setPowerOnMode(true);
-        socket.emit("dashboard-command", "power on");
-        setTimeout(() => {
-          powerOnIntervalRef.current = setInterval(() => {
-            socket.emit("dashboard-command", "robotmode");
-          }, 1500);
-        }, 1000);
-      } else {
-        setStatus(`SENDING: ${pendingCommand.toUpperCase()}`);
-        socket.emit("dashboard-command", pendingCommand);
-        setPendingCommand(null);
-      }
-    }
-  }, [dashboardStatus, pendingCommand, socket]);
-
   const handleCommand = (command, buttonId) => {
-    if (!socket) return;
+    if (!socket || dashboardStatus !== "connected") return;
     setActiveButton(buttonId);
     setTimeout(() => setActiveButton(null), 200);
-
-    if (dashboardStatus !== "connected") {
-      // Not connected - connect first, queue command
-      setStatus("CONNECTING...");
-      setPendingCommand(command);
-      socket.emit("dashboard-connect", ROBOT_IP);
-    } else {
-      // Already connected - send directly
-      setStatus(`SENDING: ${command.toUpperCase()}`);
-      socket.emit("dashboard-command", command);
-    }
+    setStatus(`SENDING: ${command.toUpperCase()}`);
+    socket.emit("dashboard-command", command);
   };
 
   const handlePowerOn = () => {
-    if (!socket) return;
-
+    if (!socket || dashboardStatus !== "connected") return;
     setActiveButton("poweron");
     setTimeout(() => setActiveButton(null), 200);
-
-    const startPowerSequence = () => {
-      setStatus("POWERING ON...");
-      setPowerOnMode(true);
-      socket.emit("dashboard-command", "power on");
-
-      // Start polling for robot mode after initial command
-      setTimeout(() => {
-        powerOnIntervalRef.current = setInterval(() => {
-          socket.emit("dashboard-command", "robotmode");
-        }, 1500); // Poll every 1.5 seconds
-      }, 1000); // Wait 1 second before starting to poll
-    };
-
-    if (dashboardStatus !== "connected") {
-      setStatus("CONNECTING...");
-      setPendingCommand("__power_on_sequence__"); // Special marker
-      socket.emit("dashboard-connect", ROBOT_IP);
-    } else {
-      startPowerSequence();
-    }
+    setStatus("POWERING ON...");
+    setPowerOnMode(true);
+    socket.emit("dashboard-command", "power on");
+    setTimeout(() => {
+      powerOnIntervalRef.current = setInterval(() => {
+        socket.emit("dashboard-command", "robotmode");
+      }, 1500);
+    }, 1000);
   };
 
   const handlePowerOff = () => {
@@ -207,50 +167,48 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   };
 
   const handleStart = () => {
-    if (!socket) return;
+    if (!socket || dashboardStatus !== "connected") return;
+    setActiveButton("start");
+    setTimeout(() => setActiveButton(null), 200);
     if (!qrValue) {
       setStatus("NO PROGRAM - SCAN QR FIRST");
       return;
     }
-
-    setActiveButton("start");
-    setTimeout(() => setActiveButton(null), 200);
-
     const programName = `${qrValue}.urp`;
-
-    if (dashboardStatus !== "connected") {
-      setStatus("CONNECTING...");
-      setStartMode(true);
-      setPendingCommand(`load ${programName}`);
-      socket.emit("dashboard-connect", ROBOT_IP);
-    } else {
-      setStatus(`LOADING: ${programName}`);
-      setStartMode(true);
-      socket.emit("dashboard-command", `load ${programName}`);
-    }
+    setStatus(`LOADING: ${programName}`);
+    setStartMode(true);
+    socket.emit("dashboard-command", `load ${programName}`);
   };
 
   return (
     <div className="operator-panel">
       <div className="operator-content">
-        {/* LED Displays */}
+        {/* LED Display */}
         <div className="operator-displays">
           <div className="led-display">
-            <span className="led-display-label">Current Jig in Workspace</span>
             <div className="led-display-screen">
-              <span className="led-display-text">{qrValue || "---"}</span>
-            </div>
-          </div>
-
-          <div className="led-display">
-            <span className="led-display-label">Status</span>
-            <div className="led-display-screen" ref={statusContainerRef}>
-              <span
-                className={`led-display-text ${shouldScroll ? "led-scroll" : ""}`}
-                ref={statusRef}
-              >
-                {status}
-              </span>
+              <div className="led-display-section">
+                <span className="led-display-label">
+                  Current Jig in Workspace
+                </span>
+                <span className="led-display-text">{qrValue || "---"}</span>
+              </div>
+              <div className="led-display-divider" />
+              <div className="led-display-row">
+                <div className="led-display-section" ref={statusContainerRef}>
+                  <span className="led-display-label">Status</span>
+                  <span
+                    className={`led-display-text ${shouldScroll ? "led-scroll" : ""}`}
+                    ref={statusRef}
+                  >
+                    {status}
+                  </span>
+                </div>
+                <div className="led-display-section led-display-section-bordered">
+                  <span className="led-display-label">Robot Mode</span>
+                  <span className="led-display-text">{robotMode || "---"}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -266,7 +224,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
             onClick={handleStart}
             disabled={!socket || !isPoweredOn}
           >
-            <img src={caringLogo} alt="Start" className="button-logo" />
+            {/* <img src={caringLogo} alt="Start" className="button-logo" /> */}
             <span className="button-label">START</span>
           </button>
 
@@ -338,6 +296,11 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
 
         {/* Robot IP display */}
         <div className="operator-robot-ip">
+          <img
+            src={dishbotLogo}
+            alt="Dishbot"
+            className="operator-robot-ip-logo"
+          />
           Robot: {ROBOT_IP} ({dashboardStatus})
         </div>
       </div>

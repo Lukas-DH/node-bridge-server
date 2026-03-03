@@ -324,7 +324,7 @@ const DASHBOARD_PORT = 29999;
 
 function connectToDashboard(robotIp) {
   return new Promise((resolve, reject) => {
-    if (state.dashboardSocket) {
+    if (state.dashboardSocket || state.dashboardConnecting) {
       disconnectFromDashboard();
     }
 
@@ -402,6 +402,7 @@ function connectToDashboard(robotIp) {
 
 function disconnectFromDashboard() {
   if (state.dashboardSocket) {
+    state.dashboardSocket.removeAllListeners();
     state.dashboardSocket.destroy();
     state.dashboardSocket = null;
   }

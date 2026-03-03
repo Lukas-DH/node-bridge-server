@@ -6,9 +6,9 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen", "Ubuntu",
+    "Cantarell", "Fira Sans", "Droid Sans", "Helvetica Neue", sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   background: #1a1a1a;
@@ -16,7 +16,7 @@ body {
 }
 
 code {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
 }
 
 /* App Layout */
@@ -227,8 +227,13 @@ code {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 .connection-label {
@@ -281,7 +286,7 @@ code {
   border: 1px solid #4a4a4a;
   border-radius: 8px;
   color: #e0e0e0;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   resize: vertical;
   margin-bottom: 0.75rem;
 }
@@ -450,7 +455,7 @@ code {
 }
 
 .step-line {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   color: #e0e0e0;
   font-size: 0.9rem;
 }
@@ -540,7 +545,7 @@ code {
 }
 
 .log-time {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   color: #888;
   font-size: 0.85rem;
   min-width: 80px;
@@ -658,7 +663,7 @@ code {
   border: 1px solid #4a4a4a;
   border-radius: 8px;
   color: #e0e0e0;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
 }
 
 .ip-input:focus {
@@ -848,7 +853,7 @@ code {
   border: 1px solid #4a4a4a;
   border-radius: 8px;
   color: #e0e0e0;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
 }
 
 .program-input:focus {
@@ -913,7 +918,7 @@ code {
 }
 
 .response-time {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   color: #888;
   font-size: 0.85rem;
   min-width: 80px;
@@ -922,7 +927,7 @@ code {
 .response-content {
   flex: 1;
   color: #e0e0e0;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
 }
 
 /* QR Code Display */
@@ -947,7 +952,7 @@ code {
 }
 
 .qr-value {
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   font-size: 1.5rem;
   font-weight: 600;
   color: #51cf66;
@@ -1041,60 +1046,66 @@ code {
 .led-display {
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
-}
-
-.led-display-label {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #495057;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding-left: 0.5rem;
 }
 
 .led-display-screen {
-  background: #1a1a1a;
-  border: 3px solid #2a2a2a;
-  border-radius: 4px;
-  padding: 0.75rem 1rem;
-  min-width: 280px;
-  max-width: 320px;
+  background: #252528;
+  border: 1px solid #3a3a3e;
+  border-radius: 10px;
+  padding: 1rem 1.5rem;
+  min-width: 480px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
   overflow: hidden;
-  position: relative;
   box-shadow:
-    inset 0 2px 8px rgba(0, 0, 0, 0.8),
-    0 1px 0 rgba(255, 255, 255, 0.1);
+    inset 0 1px 4px rgba(0, 0, 0, 0.6),
+    0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
-.led-display-screen::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: linear-gradient(
-    180deg,
-    rgba(0, 50, 0, 0.1) 0%,
-    transparent 50%,
-    rgba(0, 0, 0, 0.2) 100%
-  );
-  pointer-events: none;
+.led-display-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.led-display-section-bordered {
+  border-left: 1px solid #3a3a3e;
+  padding-left: 1.25rem;
+}
+
+.led-display-row {
+  display: flex;
+  flex-direction: row;
+  gap: 0;
+}
+
+.led-display-divider {
+  height: 1px;
+  width: 100%;
+  background: #3a3a3e;
+  flex-shrink: 0;
+}
+
+.led-display-label {
+  font-size: 0.68rem;
+  font-weight: 400;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
 }
 
 .led-display-text {
-  font-family: 'Courier New', Courier, monospace;
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: #39ff14;
-  text-shadow:
-    0 0 5px #39ff14,
-    0 0 10px #39ff14,
-    0 0 20px rgba(57, 255, 20, 0.5);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  font-size: 1.5rem;
+  font-weight: 300;
+  color: #f0f0f0;
   white-space: nowrap;
   display: inline-block;
-  letter-spacing: 1px;
+  letter-spacing: 0.5px;
 }
 
 /* Auto-scroll animation for long text */
@@ -1128,87 +1139,108 @@ code {
 
 .operator-button-row {
   display: flex;
-  gap: 1.5rem;
+  gap: 2rem;
   flex-wrap: wrap;
   justify-content: center;
 }
 
 /* ================================
-   Schneider XB7NH35 Style Buttons
-   Flat matte surface with warm center glow
+   Medical Device Style Buttons
+   Rectangular, touch-optimised clinical interface
    ================================ */
 
-/* Chrome bezel container */
+/* Outer bezel */
 .industrial-button {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
+  width: 125px;
+  height: 72px;
+  border-radius: 8px;
   border: none;
   cursor: pointer;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  transition: all 0.1s ease;
+  gap: 6px;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.08s ease;
   position: relative;
-  /* Flat dark bezel */
-  background: #2a2a2a;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  padding: 4px;
+  /* Clinical neutral gray bezel */
+  background: #9aa0a8;
+  box-shadow:
+    0 6px 0 rgba(0, 0, 0, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.18);
+  padding: 5px;
+  /* Touch: prevent callout / text-select on long press */
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
-/* Inner flat matte lens with center glow */
+/* Inner button face */
 .industrial-button::before {
-  content: '';
+  content: "";
   position: absolute;
-  top: 4px;
-  left: 4px;
-  right: 4px;
-  bottom: 4px;
-  border-radius: 50%;
+  top: 5px;
+  left: 5px;
+  right: 5px;
+  bottom: 5px;
+  border-radius: 5px;
   pointer-events: none;
-  transition: all 0.15s ease;
+  transition: filter 0.08s ease;
 }
 
-.industrial-button:hover:not(:disabled) {
-  transform: scale(1.03);
-}
-
+/* Active / pressed — works for both mouse and touch */
 .industrial-button:active:not(:disabled),
 .industrial-button.active {
-  transform: scale(0.96);
+  transform: translateY(4px);
+  box-shadow:
+    0 2px 0 rgba(0, 0, 0, 0.3),
+    0 1px 4px rgba(0, 0, 0, 0.15);
 }
 
-/* Disabled state - backlight OFF */
+.industrial-button:active:not(:disabled)::before,
+.industrial-button.active::before {
+  background: linear-gradient(180deg, #3a6080 0%, #243d52 100%) !important;
+}
+
+.industrial-button-white:active:not(:disabled)::before,
+.industrial-button-white.active::before {
+  background: linear-gradient(180deg, #3a6045 0%, #243d2a 100%) !important;
+}
+
 .industrial-button:disabled {
   cursor: not-allowed;
+  opacity: 1;
+  box-shadow:
+    0 3px 0 rgba(0, 0, 0, 0.18),
+    0 1px 4px rgba(0, 0, 0, 0.1);
 }
 
 .industrial-button .button-icon {
-  font-size: 2.4rem;
+  font-size: 1.6rem;
   line-height: 1;
   position: relative;
   z-index: 1;
-  opacity: 0.9;
 }
 
 .industrial-button .button-label {
-  font-size: 0.85rem;
-  font-weight: 600;
+  font-size: 0.78rem;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.3px;
+  letter-spacing: 0.8px;
   position: relative;
   z-index: 1;
-  opacity: 0.9;
 }
 
-/* Large Play Button */
+/* Large Button */
 .industrial-button-large {
-  width: 220px;
-  height: 220px;
+  width: 275px;
+  height: 132px;
   padding: 6px;
+  margin-bottom: 1.5rem;
 }
 
 .industrial-button-large::before {
@@ -1219,364 +1251,202 @@ code {
 }
 
 .industrial-button-large .button-icon {
-  font-size: 5rem;
+  font-size: 3.2rem;
 }
 
 .industrial-button-large .button-label {
-  font-size: 1.3rem;
-  letter-spacing: 1px;
+  font-size: 1.2rem;
+  letter-spacing: 2px;
 }
 
 /* ================================
-   Color variants - ILLUMINATED (enabled)
-   Flat matte with warm center glow fading outward
+   Color variants
    ================================ */
 
-/* Green Button - Illuminated */
+/* PLAY */
 .industrial-button-green {
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #000;
+  text-shadow: none;
 }
 
 .industrial-button-green::before {
-  background: radial-gradient(
-    circle at center,
-    #7ddf7d 0%,
-    #4CAF50 25%,
-    #3d9141 50%,
-    #2d7d32 75%,
-    #256b29 100%
-  );
-}
-
-.industrial-button-green:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #98e898 0%,
-    #5cbf5c 25%,
-    #4CAF50 50%,
-    #3d9141 75%,
-    #2d7d32 100%
-  );
+  background: linear-gradient(180deg, #aac8f0 0%, #7aaad8 100%);
 }
 
 .industrial-button-green:disabled {
-  color: #555;
+  color: #8a9688;
   text-shadow: none;
 }
 
 .industrial-button-green:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #3a4a3a 0%,
-    #2d3d2d 50%,
-    #1f2f1f 100%
-  );
+  background: linear-gradient(180deg, #c2cac2 0%, #b2bab2 100%);
 }
 
-/* Yellow Button - Illuminated */
+/* PAUSE */
 .industrial-button-yellow {
-  color: #1a1a1a;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
+  color: #000;
+  text-shadow: none;
 }
 
 .industrial-button-yellow::before {
-  background: radial-gradient(
-    circle at center,
-    #ffe066 0%,
-    #ffca28 25%,
-    #f9a825 50%,
-    #e09000 75%,
-    #c67c00 100%
-  );
-}
-
-.industrial-button-yellow:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #ffec80 0%,
-    #ffd54f 25%,
-    #ffca28 50%,
-    #f9a825 75%,
-    #e09000 100%
-  );
+  background: linear-gradient(180deg, #aac8f0 0%, #7aaad8 100%);
 }
 
 .industrial-button-yellow:disabled {
-  color: #555;
+  color: #7a7060;
   text-shadow: none;
 }
 
 .industrial-button-yellow:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #4a4535 0%,
-    #3a3528 50%,
-    #2a251a 100%
-  );
+  background: linear-gradient(180deg, #ccc4b0 0%, #bcb4a0 100%);
 }
 
-/* Red Button - Illuminated */
+/* STOP */
 .industrial-button-red {
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #000;
+  text-shadow: none;
 }
 
 .industrial-button-red::before {
-  background: radial-gradient(
-    circle at center,
-    #ff7070 0%,
-    #f44336 25%,
-    #e53935 50%,
-    #c62828 75%,
-    #a31c1c 100%
-  );
-}
-
-.industrial-button-red:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #ff8a8a 0%,
-    #ff5252 25%,
-    #f44336 50%,
-    #e53935 75%,
-    #c62828 100%
-  );
+  background: linear-gradient(180deg, #aac8f0 0%, #7aaad8 100%);
 }
 
 .industrial-button-red:disabled {
-  color: #555;
+  color: #7a8898;
   text-shadow: none;
 }
 
 .industrial-button-red:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #4a3535 0%,
-    #3a2828 50%,
-    #2a1a1a 100%
-  );
+  background: linear-gradient(180deg, #c8cdd4 0%, #b8bdc4 100%);
 }
 
-/* Blue Button - Illuminated */
+/* Steel blue - PWR ON */
 .industrial-button-blue {
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #e0eaf4;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .industrial-button-blue::before {
-  background: radial-gradient(
-    circle at center,
-    #64b5f6 0%,
-    #2196F3 25%,
-    #1e88e5 50%,
-    #1565c0 75%,
-    #0d47a1 100%
-  );
-}
-
-.industrial-button-blue:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #90caf9 0%,
-    #42a5f5 25%,
-    #2196F3 50%,
-    #1e88e5 75%,
-    #1565c0 100%
-  );
+  background: linear-gradient(180deg, #2e6088 0%, #1c4060 100%);
 }
 
 .industrial-button-blue:disabled {
-  color: #555;
+  color: #889098;
   text-shadow: none;
 }
 
 .industrial-button-blue:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #354550 0%,
-    #283540 50%,
-    #1a252f 100%
-  );
+  background: linear-gradient(180deg, #bcc4cc 0%, #acb4bc 100%);
 }
 
-/* Purple Button - Illuminated */
+/* Purple */
 .industrial-button-purple {
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #ece0f0;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .industrial-button-purple::before {
-  background: radial-gradient(
-    circle at center,
-    #ce93d8 0%,
-    #ab47bc 25%,
-    #9c27b0 50%,
-    #7b1fa2 75%,
-    #6a1b9a 100%
-  );
-}
-
-.industrial-button-purple:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #e1bee7 0%,
-    #ba68c8 25%,
-    #ab47bc 50%,
-    #9c27b0 75%,
-    #7b1fa2 100%
-  );
+  background: linear-gradient(180deg, #6a4080 0%, #4a2860 100%);
 }
 
 .industrial-button-purple:disabled {
-  color: #555;
+  color: #887890;
   text-shadow: none;
 }
 
 .industrial-button-purple:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #403545 0%,
-    #302535 50%,
-    #201525 100%
-  );
+  background: linear-gradient(180deg, #c6bace 0%, #b6aabe 100%);
 }
 
-/* Cyan Button - Illuminated */
+/* Blue-gray - PWR OFF */
 .industrial-button-cyan {
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  color: #dce4e8;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 .industrial-button-cyan::before {
-  background: radial-gradient(
-    circle at center,
-    #4dd0e1 0%,
-    #26c6da 25%,
-    #00bcd4 50%,
-    #00acc1 75%,
-    #00838f 100%
-  );
-}
-
-.industrial-button-cyan:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #80deea 0%,
-    #4dd0e1 25%,
-    #26c6da 50%,
-    #00bcd4 75%,
-    #00acc1 100%
-  );
+  background: linear-gradient(180deg, #4a6070 0%, #304050 100%);
 }
 
 .industrial-button-cyan:disabled {
-  color: #555;
+  color: #889098;
   text-shadow: none;
 }
 
 .industrial-button-cyan:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #354550 0%,
-    #283540 50%,
-    #1a252f 100%
-  );
+  background: linear-gradient(180deg, #bcc3c8 0%, #acb3b8 100%);
 }
 
-/* Black Button - No illumination (TBA/disabled) */
+/* Black */
 .industrial-button-black {
-  color: #666;
+  color: #888;
   text-shadow: none;
 }
 
 .industrial-button-black::before {
-  background: radial-gradient(
-    circle at center,
-    #3a3a3a 0%,
-    #2a2a2a 50%,
-    #1a1a1a 100%
-  );
+  background: linear-gradient(180deg, #3a3a3a 0%, #1a1a1a 100%);
 }
 
 .industrial-button-black:disabled {
-  color: #444;
+  color: #555;
 }
 
 .industrial-button-black:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #2a2a2a 0%,
-    #1a1a1a 50%,
-    #101010 100%
-  );
+  background: linear-gradient(180deg, #2a2a2a 0%, #1a1a1a 100%);
 }
 
-/* White Button - Illuminated */
+/* Muted green - START */
 .industrial-button-white {
-  color: #333;
-  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.5);
+  color: #0a1a0e;
+  text-shadow: 0 1px 1px rgba(180, 230, 190, 0.4);
 }
 
 .industrial-button-white::before {
-  background: radial-gradient(
-    circle at center,
-    #ffffff 0%,
-    #f5f5f5 25%,
-    #eeeeee 50%,
-    #e0e0e0 75%,
-    #d0d0d0 100%
-  );
-}
-
-.industrial-button-white:hover:not(:disabled)::before {
-  background: radial-gradient(
-    circle at center,
-    #ffffff 0%,
-    #ffffff 25%,
-    #f5f5f5 50%,
-    #eeeeee 75%,
-    #e0e0e0 100%
-  );
+  background: linear-gradient(180deg, #6aaa7a 0%, #458555 100%);
 }
 
 .industrial-button-white:disabled {
-  color: #555;
+  color: #7a8a7a;
   text-shadow: none;
 }
 
 .industrial-button-white:disabled::before {
-  background: radial-gradient(
-    circle at center,
-    #4a4a4a 0%,
-    #3a3a3a 50%,
-    #2a2a2a 100%
-  );
+  background: linear-gradient(180deg, #c4ccc4 0%, #b4bcb4 100%);
 }
 
 /* Button Logo Image */
 .industrial-button .button-logo {
-  width: 60%;
-  height: 60%;
+  width: 50%;
+  height: 50%;
   object-fit: contain;
   position: relative;
   z-index: 1;
 }
 
 .industrial-button-large .button-logo {
-  width: 65%;
-  height: 65%;
+  width: 55%;
+  height: 55%;
 }
 
 /* Robot IP Display */
 .operator-robot-ip {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
   font-size: 0.8rem;
   color: #6c757d;
-  font-family: 'Courier New', Courier, monospace;
+  font-family: "Courier New", Courier, monospace;
   padding: 0.5rem 1rem;
   background: rgba(0, 0, 0, 0.05);
   border-radius: 4px;
   margin-top: 1rem;
+}
+
+.operator-robot-ip-logo {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+  border-radius: 4px;
 }
 
 /* Responsive for Operator Panel */
@@ -1600,13 +1470,20 @@ code {
     gap: 2rem;
   }
 
-  .led-display-screen {
-    min-width: 240px;
-    max-width: 280px;
+  .led-display-row {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .led-display-section-bordered {
+    border-left: none;
+    border-top: 1px solid #3a3a3e;
+    padding-left: 0;
+    padding-top: 0.75rem;
   }
 
   .led-display-text {
-    font-size: 1.2rem;
+    font-size: 1.25rem;
   }
 
   @keyframes led-scroll {
@@ -1625,8 +1502,8 @@ code {
   }
 
   .industrial-button-large {
-    width: 180px;
-    height: 180px;
+    width: 200px;
+    height: 100px;
     padding: 5px;
   }
 
@@ -1638,16 +1515,16 @@ code {
   }
 
   .industrial-button-large .button-icon {
-    font-size: 2.8rem;
+    font-size: 2.4rem;
   }
 
   .industrial-button-large .button-label {
-    font-size: 0.85rem;
+    font-size: 1rem;
   }
 
   .industrial-button {
-    width: 110px;
-    height: 110px;
+    width: 105px;
+    height: 62px;
     padding: 4px;
   }
 
@@ -1663,7 +1540,7 @@ code {
   }
 
   .industrial-button .button-label {
-    font-size: 0.5rem;
+    font-size: 0.65rem;
   }
 
   .operator-button-row {
