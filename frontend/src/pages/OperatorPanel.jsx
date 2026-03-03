@@ -14,11 +14,18 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const [errorModal, setErrorModal] = useState(null); // null = hidden, string = error message
   const [powerOnMode, setPowerOnMode] = useState(false); //change back to false
   const [bootStartMode, setBootStartMode] = useState(false);
+  const [powerOffMode, setPowerOffMode] = useState(false);
   const [isPoweredOn, setIsPoweredOn] = useState(false);
   const [programState, setProgramState] = useState(null); // "playing", "paused", "stopped"
   const [robotMode, setRobotMode] = useState(null);
+  const [buttonCooldown, setButtonCooldown] = useState(false);
   const powerOnIntervalRef = useRef(null);
   const pollingIntervalRef = useRef(null);
+
+  const startCooldown = () => {
+    setButtonCooldown(true);
+    setTimeout(() => setButtonCooldown(false), 1000);
+  };
 
   useEffect(() => {
     if (socket) {
@@ -27,13 +34,13 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         const responseLower = response.toLowerCase();
 
         // Detect power/robot state from robotmode responses
-        if (responseLower.includes("power_off")) {
+        if (responseLower.includes("robotmode: power_off")) {
           setIsPoweredOn(false);
           setRobotMode("POWER OFF");
-        } else if (responseLower.includes("idle")) {
+        } else if (responseLower.includes("robotmode: idle")) {
           setIsPoweredOn(true);
           setRobotMode("IDLE");
-        } else if (responseLower.includes("running")) {
+        } else if (responseLower.includes("robotmode: running")) {
           setIsPoweredOn(true);
           setRobotMode("RUNNING");
           if (bootStartMode) {
@@ -62,7 +69,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         // Handle power-on sequence polling
         if (powerOnMode) {
           // Check if this is a robotmode response indicating idle state
-          if (responseLower.includes("idle")) {
+          if (responseLower.includes("robotmode: idle")) {
             // Robot is ready - send brake release
             clearInterval(powerOnIntervalRef.current);
             powerOnIntervalRef.current = null;
@@ -104,10 +111,17 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         }
 
         // Auto-load __ready.urp when __working.urp stops
-        if (responseLower.includes("stopped __working")) {
+        if (responseLower.includes("stopped __working") && !powerOffMode) {
           setStartMode(true);
           setStatus("LOADING READY PROGRAM...");
           socket.emit("dashboard-command", "load __ready.urp");
+        }
+
+        // Send power off once __idle.urp has finished
+        if (responseLower.includes("stopped __idle") && powerOffMode) {
+          setPowerOffMode(false);
+          setIsPoweredOn(false);
+          socket.emit("dashboard-command", "power off");
         }
       });
 
@@ -118,7 +132,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         }
       };
     }
-  }, [socket, powerOnMode, startMode, bootStartMode]);
+  }, [socket, powerOnMode, startMode, bootStartMode, powerOffMode, buttonCooldown]);
 
   // Check if status text overflows and needs scrolling
   useEffect(() => {
@@ -131,7 +145,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
 
   // Set up status polling when connected
   useEffect(() => {
-    if (dashboardStatus === "connected" && socket && !powerOnMode) {
+    if (dashboardStatus === "connected" && socket && !powerOnMode && !buttonCooldown) {
       const queries = ["robotmode", "programstate"];
       let i = 0;
       let cancelled = false;
@@ -157,10 +171,11 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         pollingIntervalRef.current = null;
       }
     }
-  }, [dashboardStatus, socket, powerOnMode]);
+  }, [dashboardStatus, socket, powerOnMode, buttonCooldown]);
 
   const handleCommand = (command, buttonId) => {
     if (!socket || dashboardStatus !== "connected") return;
+    startCooldown();
     setActiveButton(buttonId);
     setTimeout(() => setActiveButton(null), 200);
     setStatus(`SENDING: ${command.toUpperCase()}`);
@@ -169,6 +184,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
 
   const handlePowerOn = () => {
     if (!socket || dashboardStatus !== "connected") return;
+    startCooldown();
     setActiveButton("poweron");
     setTimeout(() => setActiveButton(null), 200);
     setStatus("POWERING ON...");
@@ -183,12 +199,18 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
 
   const handlePowerOff = () => {
     if (!socket) return;
-    setIsPoweredOn(false); // Immediately disable buttons
-    handleCommand("power off", "poweroff");
+    startCooldown();
+    setActiveButton("poweroff");
+    setTimeout(() => setActiveButton(null), 200);
+    setPowerOffMode(true);
+    setStartMode(true);
+    setStatus("LOADING IDLE PROGRAM...");
+    socket.emit("dashboard-command", "load __idle.urp");
   };
 
   const handleStart = () => {
     if (!socket || dashboardStatus !== "connected") return;
+    startCooldown();
     setActiveButton("start");
     setTimeout(() => setActiveButton(null), 200);
     if (!qrValue) {
@@ -243,7 +265,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               activeButton === "start" ? "active" : ""
             }`}
             onClick={handleStart}
-            disabled={!socket || !isPoweredOn}
+            disabled={!socket || !isPoweredOn || buttonCooldown}
           >
             {/* <img src={caringLogo} alt="Start" className="button-logo" /> */}
             <span className="button-label">START</span>
@@ -256,7 +278,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "play" ? "active" : ""
               }`}
               onClick={() => handleCommand("play", "play")}
-              disabled={!socket || !isPoweredOn || programState === "playing"}
+              disabled={!socket || !isPoweredOn || programState === "playing" || buttonCooldown}
             >
               <span className="button-icon">▶</span>
               <span className="button-label">PLAY</span>
@@ -270,7 +292,8 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 !socket ||
                 !isPoweredOn ||
                 programState === "paused" ||
-                programState === "stopped"
+                programState === "stopped" ||
+                buttonCooldown
               }
             >
               <span className="button-icon">⏸</span>
@@ -282,7 +305,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "stop" ? "active" : ""
               }`}
               onClick={() => handleCommand("stop", "stop")}
-              disabled={!socket || !isPoweredOn || programState === "stopped"}
+              disabled={!socket || !isPoweredOn || programState === "stopped" || buttonCooldown}
             >
               <span className="button-icon">⏹</span>
               <span className="button-label">STOP</span>
@@ -294,7 +317,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweron" ? "active" : ""
               }`}
               onClick={handlePowerOn}
-              disabled={!socket || powerOnMode || isPoweredOn}
+              disabled={!socket || powerOnMode || isPoweredOn || buttonCooldown}
             >
               <span className="button-icon">⚡</span>
               <span className="button-label">
@@ -307,7 +330,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweroff" ? "active" : ""
               }`}
               onClick={handlePowerOff}
-              disabled={!socket || !isPoweredOn}
+              disabled={!socket || !isPoweredOn || powerOffMode || buttonCooldown}
             >
               <span className="button-icon">○</span>
               <span className="button-label">PWR OFF</span>
@@ -326,11 +349,19 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         </div>
       </div>
       {errorModal && (
-        <div className="error-modal-overlay" onClick={() => setErrorModal(null)}>
+        <div
+          className="error-modal-overlay"
+          onClick={() => setErrorModal(null)}
+        >
           <div className="error-modal" onClick={(e) => e.stopPropagation()}>
             <h2 className="error-modal-title">Program Not Found</h2>
             <p className="error-modal-message">{errorModal}</p>
-            <button className="error-modal-ok" onClick={() => setErrorModal(null)}>OK</button>
+            <button
+              className="error-modal-ok"
+              onClick={() => setErrorModal(null)}
+            >
+              OK
+            </button>
           </div>
         </div>
       )}

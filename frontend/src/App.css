@@ -1547,3 +1547,52 @@ code {
     gap: 1rem;
   }
 }
+
+/* Error Modal */
+.error-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+.error-modal {
+  background: #1a1a2e;
+  border: 2px solid #e74c3c;
+  border-radius: 8px;
+  padding: 2rem;
+  min-width: 320px;
+  text-align: center;
+  box-shadow: 0 0 40px rgba(231, 76, 60, 0.4);
+}
+.error-modal-title {
+  color: #e74c3c;
+  font-family: 'Courier New', monospace;
+  margin: 0 0 1rem;
+  font-size: 1.2rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+.error-modal-message {
+  color: #fff;
+  font-family: 'Courier New', monospace;
+  margin: 0 0 1.5rem;
+  font-size: 1rem;
+}
+.error-modal-ok {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+  padding: 0.6rem 2rem;
+  font-family: 'Courier New', monospace;
+  font-size: 1rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.error-modal-ok:hover {
+  background: #c0392b;
+}
