@@ -46,6 +46,7 @@ const state = {
   dashboardSocket: null,
   dashboardIp: null,
   dashboardPendingCommand: null,
+  pollingInterval: null,
   // QR code receiver state
   currentQrValue: null,
   qrConnected: false,
@@ -353,6 +354,7 @@ function connectToDashboard(robotIp) {
       );
       emitStatus();
       resolve(true);
+      startDashboardPolling();
     });
 
     socket.on("data", (data) => {
@@ -391,6 +393,7 @@ function connectToDashboard(robotIp) {
     });
 
     socket.on("close", () => {
+      stopDashboardPolling();
       log("info", "dashboard", "Dashboard connection closed");
       state.dashboardConnected = false;
       state.dashboardConnecting = false;
@@ -401,6 +404,7 @@ function connectToDashboard(robotIp) {
 }
 
 function disconnectFromDashboard() {
+  stopDashboardPolling();
   if (state.dashboardSocket) {
     state.dashboardSocket.removeAllListeners();
     state.dashboardSocket.destroy();
@@ -443,6 +447,30 @@ function sendDashboardCommand(command) {
 
     state.dashboardSocket.write(command + "\n");
   });
+}
+
+const POLL_QUERIES = ['robotmode', 'programstate'];
+let pollIndex = 0;
+
+function startDashboardPolling() {
+  stopDashboardPolling();
+  state.pollingInterval = setInterval(() => {
+    if (!state.dashboardConnected || !state.dashboardSocket) {
+      stopDashboardPolling();
+      return;
+    }
+    if (state.dashboardPendingCommand) return; // skip if user command in flight
+    const query = POLL_QUERIES[pollIndex % 2];
+    pollIndex++;
+    state.dashboardSocket.write(query + '\n');
+  }, 500);
+}
+
+function stopDashboardPolling() {
+  if (state.pollingInterval) {
+    clearInterval(state.pollingInterval);
+    state.pollingInterval = null;
+  }
 }
 
 // ============================================================================
