@@ -14,11 +14,11 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const [errorModal, setErrorModal] = useState(null); // null = hidden, string = error message
   const [powerOnMode, setPowerOnMode] = useState(false); //change back to false
   const [bootStartMode, setBootStartMode] = useState(false);
-  const [powerOffMode, setPowerOffMode] = useState(false);
   const [isPoweredOn, setIsPoweredOn] = useState(false);
   const [programState, setProgramState] = useState(null); // "playing", "paused", "stopped"
   const [robotMode, setRobotMode] = useState(null);
   const [buttonCooldown, setButtonCooldown] = useState(false);
+  const [idleMode, setIdleMode] = useState(false);
 
   const startCooldown = () => {
     setButtonCooldown(true);
@@ -105,17 +105,18 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         }
 
         // Auto-load __ready.urp when __working.urp stops
-        if (responseLower.includes("stopped __working") && !powerOffMode) {
+        if (responseLower.includes("stopped __working")) {
           setStartMode(true);
           setStatus("LOADING READY PROGRAM...");
           socket.emit("dashboard-command", "load __ready.urp");
         }
 
-        // Send power off once __idle.urp has finished
-        if (responseLower.includes("stopped __idle") && powerOffMode) {
-          setPowerOffMode(false);
-          setIsPoweredOn(false);
-          socket.emit("dashboard-command", "power off");
+        // Clear idle mode when __idle.urp finishes
+        if (responseLower.includes("stopped __idle")) {
+          setIdleMode(false);
+          if (qrValue === "power off") {
+            socket.emit("dashboard-command", "power off");
+          }
         }
       });
 
@@ -123,7 +124,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         socket.off("dashboard-response");
       };
     }
-  }, [socket, powerOnMode, startMode, bootStartMode, powerOffMode, buttonCooldown]);
+  }, [socket, powerOnMode, startMode, bootStartMode, buttonCooldown, idleMode]);
 
   // Check if status text overflows and needs scrolling
   useEffect(() => {
@@ -154,13 +155,13 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   };
 
   const handlePowerOff = () => {
-    if (!socket) return;
+    if (!socket || dashboardStatus !== "connected") return;
     startCooldown();
     setActiveButton("poweroff");
     setTimeout(() => setActiveButton(null), 200);
-    setPowerOffMode(true);
-    setStartMode(true);
     setStatus("LOADING IDLE PROGRAM...");
+    setIdleMode(true);
+    setStartMode(true);
     socket.emit("dashboard-command", "load __idle.urp");
   };
 
@@ -221,7 +222,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               activeButton === "start" ? "active" : ""
             }`}
             onClick={handleStart}
-            disabled={!socket || !isPoweredOn || buttonCooldown}
+            disabled={!socket || !isPoweredOn || idleMode || buttonCooldown}
           >
             {/* <img src={caringLogo} alt="Start" className="button-logo" /> */}
             <span className="button-label">START</span>
@@ -234,7 +235,13 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "play" ? "active" : ""
               }`}
               onClick={() => handleCommand("play", "play")}
-              disabled={!socket || !isPoweredOn || programState === "playing" || buttonCooldown}
+              disabled={
+                !socket ||
+                !isPoweredOn ||
+                idleMode ||
+                programState === "playing" ||
+                buttonCooldown
+              }
             >
               <span className="button-icon">▶</span>
               <span className="button-label">PLAY</span>
@@ -247,6 +254,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               disabled={
                 !socket ||
                 !isPoweredOn ||
+                idleMode ||
                 programState === "paused" ||
                 programState === "stopped" ||
                 buttonCooldown
@@ -261,7 +269,13 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "stop" ? "active" : ""
               }`}
               onClick={() => handleCommand("stop", "stop")}
-              disabled={!socket || !isPoweredOn || programState === "stopped" || buttonCooldown}
+              disabled={
+                !socket ||
+                !isPoweredOn ||
+                idleMode ||
+                programState === "stopped" ||
+                buttonCooldown
+              }
             >
               <span className="button-icon">⏹</span>
               <span className="button-label">STOP</span>
@@ -273,7 +287,13 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweron" ? "active" : ""
               }`}
               onClick={handlePowerOn}
-              disabled={!socket || powerOnMode || isPoweredOn || buttonCooldown}
+              disabled={
+                !socket ||
+                powerOnMode ||
+                isPoweredOn ||
+                idleMode ||
+                buttonCooldown
+              }
             >
               <span className="button-icon">⚡</span>
               <span className="button-label">
@@ -286,7 +306,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweroff" ? "active" : ""
               }`}
               onClick={handlePowerOff}
-              disabled={!socket || !isPoweredOn || powerOffMode || buttonCooldown}
+              disabled={!socket || !isPoweredOn || idleMode || buttonCooldown}
             >
               <span className="button-icon">○</span>
               <span className="button-label">PWR OFF</span>
