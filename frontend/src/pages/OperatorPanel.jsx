@@ -19,8 +19,6 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
   const [programState, setProgramState] = useState(null); // "playing", "paused", "stopped"
   const [robotMode, setRobotMode] = useState(null);
   const [buttonCooldown, setButtonCooldown] = useState(false);
-  const powerOnIntervalRef = useRef(null);
-  const pollingIntervalRef = useRef(null);
 
   const startCooldown = () => {
     setButtonCooldown(true);
@@ -66,13 +64,9 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
           setProgramState("stopped");
         }
 
-        // Handle power-on sequence polling
+        // Handle power-on sequence
         if (powerOnMode) {
-          // Check if this is a robotmode response indicating idle state
           if (responseLower.includes("robotmode: idle")) {
-            // Robot is ready - send brake release
-            clearInterval(powerOnIntervalRef.current);
-            powerOnIntervalRef.current = null;
             setStatus("RELEASING BRAKES...");
             socket.emit("dashboard-command", "brake release");
             setBootStartMode(true);
@@ -127,9 +121,6 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
 
       return () => {
         socket.off("dashboard-response");
-        if (powerOnIntervalRef.current) {
-          clearInterval(powerOnIntervalRef.current);
-        }
       };
     }
   }, [socket, powerOnMode, startMode, bootStartMode, powerOffMode, buttonCooldown]);
@@ -142,36 +133,6 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
       setShouldScroll(textWidth > containerWidth);
     }
   }, [status]);
-
-  // Set up status polling when connected
-  useEffect(() => {
-    if (dashboardStatus === "connected" && socket && !powerOnMode && !buttonCooldown) {
-      const queries = ["robotmode", "programstate"];
-      let i = 0;
-      let cancelled = false;
-
-      const tick = () => {
-        if (cancelled) return;
-        socket.volatile.emit("dashboard-command", queries[i % 2]);
-        i++;
-        pollingIntervalRef.current = setTimeout(tick, 500);
-      };
-
-      tick();
-
-      return () => {
-        cancelled = true;
-        clearTimeout(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      };
-    } else {
-      // Clear polling when disconnected
-      if (pollingIntervalRef.current) {
-        clearTimeout(pollingIntervalRef.current);
-        pollingIntervalRef.current = null;
-      }
-    }
-  }, [dashboardStatus, socket, powerOnMode, buttonCooldown]);
 
   const handleCommand = (command, buttonId) => {
     if (!socket || dashboardStatus !== "connected") return;
@@ -190,11 +151,6 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
     setStatus("POWERING ON...");
     setPowerOnMode(true);
     socket.emit("dashboard-command", "power on");
-    setTimeout(() => {
-      powerOnIntervalRef.current = setInterval(() => {
-        socket.emit("dashboard-command", "robotmode");
-      }, 1500);
-    }, 1000);
   };
 
   const handlePowerOff = () => {
