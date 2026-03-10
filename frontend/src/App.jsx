@@ -8,7 +8,8 @@ import OperatorPanel from "./pages/OperatorPanel";
 
 // const BACKEND_URL = "http://localhost:3001";
 // const BACKEND_URL = "http://192.168.1.88:3001";
-const BACKEND_URL = "http://192.168.1.20:3001";
+// const BACKEND_URL = "http://192.168.1.20:3001";
+const BACKEND_URL = "http://192.168.1.27:3001";
 
 export const SocketContext = createContext(null);
 
