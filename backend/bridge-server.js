@@ -756,7 +756,7 @@ const qrServer = net.createServer((socket) => {
   state.qrConnected = true;
   state.qrClient = socket;
 
-  socket.on("data", (data) => {
+  socket.on("data", async (data) => {
     const qrValue = data.toString("utf-8").trim();
     state.currentQrValue = qrValue;
     const timestamp = new Date().toISOString();
@@ -766,6 +766,19 @@ const qrServer = net.createServer((socket) => {
     io.emit("qr-update", { value: qrValue, timestamp });
 
     socket.write("OK\n");
+
+    // "finished" → load __ready.urp and play
+    if (qrValue.toLowerCase() === "finished") {
+      log("info", "server", "QR 'finished' received — loading __ready.urp");
+      try {
+        await sendDashboardCommand("load __ready.urp");
+        await new Promise((r) => setTimeout(r, 500));
+        await sendDashboardCommand("play");
+        log("info", "server", "Loaded and started __ready.urp");
+      } catch (err) {
+        log("error", "server", `Failed to load __ready.urp: ${err.message}`);
+      }
+    }
   });
 
   socket.on("end", () => {
