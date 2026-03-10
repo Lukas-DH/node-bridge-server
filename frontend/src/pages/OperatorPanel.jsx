@@ -180,6 +180,8 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
     socket.emit("dashboard-command", `load ${programName}`);
   };
 
+  const notConnected = !socket || dashboardStatus !== "connected";
+
   return (
     <div className="operator-panel">
       <div className="operator-content">
@@ -222,7 +224,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               activeButton === "start" ? "active" : ""
             }`}
             onClick={handleStart}
-            disabled={!socket || !isPoweredOn || idleMode || buttonCooldown}
+            disabled={notConnected || !isPoweredOn || idleMode || buttonCooldown}
           >
             {/* <img src={caringLogo} alt="Start" className="button-logo" /> */}
             <span className="button-label">START</span>
@@ -236,7 +238,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               }`}
               onClick={() => handleCommand("play", "play")}
               disabled={
-                !socket ||
+                notConnected ||
                 !isPoweredOn ||
                 idleMode ||
                 programState === "playing" ||
@@ -252,7 +254,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               }`}
               onClick={() => handleCommand("pause", "pause")}
               disabled={
-                !socket ||
+                notConnected ||
                 !isPoweredOn ||
                 idleMode ||
                 programState === "paused" ||
@@ -270,7 +272,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               }`}
               onClick={() => handleCommand("stop", "stop")}
               disabled={
-                !socket ||
+                notConnected ||
                 !isPoweredOn ||
                 idleMode ||
                 programState === "stopped" ||
@@ -288,7 +290,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               }`}
               onClick={handlePowerOn}
               disabled={
-                !socket ||
+                notConnected ||
                 powerOnMode ||
                 isPoweredOn ||
                 idleMode ||
@@ -306,7 +308,7 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweroff" ? "active" : ""
               }`}
               onClick={handlePowerOff}
-              disabled={!socket || !isPoweredOn || idleMode || buttonCooldown}
+              disabled={notConnected || !isPoweredOn || idleMode || buttonCooldown}
             >
               <span className="button-icon">○</span>
               <span className="button-label">PWR OFF</span>
@@ -322,6 +324,22 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
             className="operator-robot-ip-logo"
           />
           Robot: {ROBOT_IP} ({dashboardStatus})
+          <button
+            className={`connect-button ${
+              dashboardStatus === "connected"
+                ? "connect-button-connected"
+                : "connect-button-disconnected"
+            }`}
+            title={dashboardStatus === "connected" ? "Disconnect" : "Connect"}
+            onClick={() => {
+              if (dashboardStatus === "connected") {
+                socket.emit("dashboard-disconnect");
+              } else {
+                socket.emit("dashboard-connect", ROBOT_IP);
+              }
+            }}
+            disabled={!socket}
+          />
         </div>
       </div>
       {errorModal && (
