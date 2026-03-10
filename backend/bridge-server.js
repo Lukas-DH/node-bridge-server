@@ -606,7 +606,6 @@ function disconnectFromDashboard() {
   }
   state.dashboardConnected = false;
   state.dashboardConnecting = false;
-  state.dashboardIp = null;
   log("info", "dashboard", "Disconnected from Dashboard Server");
   emitStatus();
 }
@@ -771,6 +770,10 @@ const qrServer = net.createServer((socket) => {
     if (qrValue.toLowerCase() === "finished") {
       log("info", "server", "QR 'finished' received — loading __ready.urp");
       try {
+        if (!state.dashboardConnected && state.dashboardIp) {
+          log("info", "server", "Dashboard disconnected — reconnecting before load...");
+          await connectToDashboard(state.dashboardIp);
+        }
         await sendDashboardCommand("load __ready.urp");
         await new Promise((r) => setTimeout(r, 500));
         await sendDashboardCommand("play");
