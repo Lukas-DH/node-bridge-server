@@ -115,7 +115,9 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
         if (responseLower.includes("stopped __idle")) {
           setIdleMode(false);
           if (qrValue === "power off") {
-            socket.emit("dashboard-command", "power off");
+            // socket.emit("dashboard-command", "power off");
+            socket.emit("dashboard-command", "load __ready.urp");
+            // setIdleMode(true);
           }
         }
       });
@@ -224,7 +226,9 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
               activeButton === "start" ? "active" : ""
             }`}
             onClick={handleStart}
-            disabled={notConnected || !isPoweredOn || idleMode || buttonCooldown}
+            disabled={
+              notConnected || !isPoweredOn || idleMode || buttonCooldown
+            }
           >
             {/* <img src={caringLogo} alt="Start" className="button-logo" /> */}
             <span className="button-label">START</span>
@@ -308,7 +312,9 @@ function OperatorPanel({ socket, qrValue, dashboardStatus }) {
                 activeButton === "poweroff" ? "active" : ""
               }`}
               onClick={handlePowerOff}
-              disabled={notConnected || !isPoweredOn || idleMode || buttonCooldown}
+              disabled={
+                notConnected || !isPoweredOn || idleMode || buttonCooldown
+              }
             >
               <span className="button-icon">○</span>
               <span className="button-label">PWR OFF</span>
