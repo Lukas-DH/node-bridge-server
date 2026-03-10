@@ -26,6 +26,7 @@ function App() {
   const [logs, setLogs] = useState([]);
   const [handshakeSteps, setHandshakeSteps] = useState([]);
   const [connected, setConnected] = useState(false);
+  const [activePipette, setActivePipette] = useState(null);
   const location = useLocation();
   const isOperatorPage = location.pathname === "/operator";
 
@@ -77,6 +78,11 @@ function App() {
         // Continue current handshake
         return [...prev, step];
       });
+    });
+
+    // Listen for active pipette updates
+    newSocket.on("active-pipette", (model) => {
+      setActivePipette(model);
     });
 
     // Listen for QR code updates
@@ -165,6 +171,7 @@ function App() {
                 sendCommand={sendCommand}
                 clearLogs={clearLogs}
                 clearHandshake={clearHandshake}
+                socket={socket}
               />
             }
           />

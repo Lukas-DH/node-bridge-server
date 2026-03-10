@@ -5,11 +5,12 @@
  * TCP-to-Serial bridge with real-time web dashboard
  *
  * Features:
- * - TCP server for robot connections (port 5000)
- * - Serial connection to Picus 2 pipette
+ * - TCP server for robot connections (port 5001)
+ * - Multi-pipette auto-discovery and per-model routing
  * - HTTP + WebSocket server for web dashboard (port 3001)
+ * - UR Dashboard Server TCP client
+ * - QR code TCP receiver (port 5002)
  * - Real-time communication logs
- * - Connection status monitoring
  */
 
 import net from "net";
@@ -22,24 +23,20 @@ import cors from "cors";
 
 // Configuration
 const CONFIG = {
-  serialPort: process.env.SERIAL_PORT || "/dev/ttyACM0",
-  //  serialPort: process.env.SERIAL_PORT || "/dev/tty.usbmodem438812441",
   serialBaudRate: 230400,
   tcpPort: 5001,
   qrPort: 5002,
   httpPort: 3001,
   handshakeTimeout: 5000, // 5 seconds
+  discoveryTimeout: 5000, // 5 seconds per port during discovery
 };
 
-// State
+// State (robot / dashboard / qr fields only — pipette state lives in pipetteRegistry)
 const state = {
   commandNumber: 0,
   robotConnected: false,
-  serialConnected: false,
   robotClient: null,
-  serialPort: null,
-  currentHandshake: null,
-  pendingResponse: null,
+  pendingRobotResponse: null,
   // Dashboard server state
   dashboardConnected: false,
   dashboardConnecting: false,
@@ -51,6 +48,12 @@ const state = {
   currentQrValue: null,
   qrConnected: false,
   qrClient: null,
+};
+
+// Pipette Registry for multi-pipette support
+const pipetteRegistry = {
+  discovered: [], // Array of {model, port, serialPort, parser, connected, currentHandshake, pendingResponse}
+  activeModel: null, // Currently selected model for commands
 };
 
 // Express app for HTTP + WebSocket
@@ -86,11 +89,14 @@ function log(type, source, message, data = null) {
   return logEntry;
 }
 
-// Emit status update
+// Emit status update (includes all subsystems for backward compat)
 function emitStatus() {
+  const anyPipetteConnected = pipetteRegistry.discovered.some(
+    (p) => p.connected,
+  );
   const status = {
     robot: state.robotConnected ? "connected" : "disconnected",
-    serial: state.serialConnected ? "connected" : "disconnected",
+    serial: anyPipetteConnected ? "connected" : "disconnected",
     server: "running",
     dashboard: state.dashboardConnected
       ? "connected"
@@ -105,82 +111,226 @@ function emitStatus() {
 }
 
 // ============================================================================
-// SERIAL PORT SETUP
+// MULTI-PIPETTE DISCOVERY & CONNECTION
 // ============================================================================
 
-function setupSerialPort() {
-  log(
-    "info",
-    "server",
-    `Attempting to connect to serial port: ${CONFIG.serialPort}`,
-  );
+// Discover and identify all connected pipettes
+async function discoverPipettes() {
+  log("info", "server", "Starting pipette discovery...");
+
+  try {
+    const ports = await SerialPort.list();
+    log("info", "server", `Found ${ports.length} serial ports`);
+
+    // Filter for likely pipette ports (macOS: tty.usbmodem*, Linux/Pi: ttyACM*)
+    const candidatePorts = ports.filter((port) => {
+      const path = port.path;
+      return path.includes("tty.usbmodem") || path.includes("ttyACM");
+    });
+
+    log(
+      "info",
+      "server",
+      `Candidate ports: ${candidatePorts.map((p) => p.path).join(", ")}`,
+    );
+
+    const discovered = [];
+
+    for (const portInfo of candidatePorts) {
+      const portPath = portInfo.path;
+      log("info", "server", `Probing port: ${portPath}`);
+
+      try {
+        const model = await identifyPipette(portPath);
+
+        if (model) {
+          log("info", "server", `✓ Identified ${model} on ${portPath}`);
+          discovered.push({
+            model,
+            port: portPath,
+            serialPort: null,
+            parser: null,
+            connected: false,
+            currentHandshake: null,
+            pendingResponse: null,
+          });
+        } else {
+          log("info", "server", `✗ No valid response from ${portPath}`);
+        }
+      } catch (err) {
+        log("error", "server", `Failed to probe ${portPath}: ${err.message}`);
+      }
+    }
+
+    log(
+      "info",
+      "server",
+      `Discovery complete: Found ${discovered.length} pipette(s)`,
+    );
+    return discovered;
+  } catch (err) {
+    log("error", "server", `Port discovery failed: ${err.message}`);
+    return [];
+  }
+}
+
+// Identify a pipette by sending GET_MODEL command
+function identifyPipette(portPath) {
+  return new Promise((resolve) => {
+    let testPort;
+    let parser;
+    const receivedLines = [];
+
+    const cleanup = () => {
+      clearTimeout(timeoutHandle);
+      if (parser) parser.removeAllListeners();
+      if (testPort && testPort.isOpen) testPort.close();
+    };
+
+    const timeoutHandle = setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, CONFIG.discoveryTimeout);
+
+    try {
+      testPort = new SerialPort({
+        path: portPath,
+        baudRate: CONFIG.serialBaudRate,
+      });
+
+      parser = testPort.pipe(new ReadlineParser({ delimiter: "\n" }));
+
+      testPort.on("open", () => {
+        const cmd = JSON.stringify({ no: 0, data: "GET_MODEL" }) + "\n";
+        testPort.write(cmd);
+      });
+
+      testPort.on("error", () => {
+        cleanup();
+        resolve(null);
+      });
+
+      parser.on("data", (line) => {
+        const lineStr = line.trim();
+        if (!lineStr) return;
+
+        log("info", "server", `[Discovery] ${portPath} <- ${lineStr}`);
+        receivedLines.push(lineStr);
+
+        const hasEnd = receivedLines.some((l) =>
+          l.toUpperCase().includes("END"),
+        );
+        const hasOK = receivedLines.some((l) => l.toUpperCase().includes("OK"));
+
+        if (hasEnd || hasOK) {
+          const model = extractModelFromResponse(receivedLines);
+          cleanup();
+          resolve(model);
+        }
+      });
+    } catch (err) {
+      cleanup();
+      resolve(null);
+    }
+  });
+}
+
+// Extract model name from handshake response lines
+function extractModelFromResponse(lines) {
+  for (const line of lines) {
+    const upper = line.toUpperCase();
+
+    if (["ACK", "BEGIN", "END", "OK", "ERROR"].some((kw) => upper.includes(kw)))
+      continue;
+
+    if (line.startsWith("{") || line.startsWith("[")) {
+      try {
+        const data = JSON.parse(line);
+        if (data.model) return data.model;
+        if (data.data && data.data.model) return data.data.model;
+      } catch {
+        // fall through
+      }
+    }
+
+    if (line.trim()) return line.trim();
+  }
+  return null;
+}
+
+// Connect to a specific pipette
+function connectToPipette(pipetteInfo) {
+  const { model, port } = pipetteInfo;
+
+  log("info", "server", `Connecting to ${model} on ${port}`);
 
   const serialPort = new SerialPort({
-    path: CONFIG.serialPort,
+    path: port,
     baudRate: CONFIG.serialBaudRate,
   });
 
   const parser = serialPort.pipe(new ReadlineParser({ delimiter: "\n" }));
 
+  pipetteInfo.serialPort = serialPort;
+  pipetteInfo.parser = parser;
+
   serialPort.on("open", () => {
-    state.serialConnected = true;
-    state.serialPort = serialPort;
-    log("info", "pipette", "Serial port connected");
-    emitStatus();
+    pipetteInfo.connected = true;
+    log("info", "pipette", `${model} connected on ${port}`);
+    emitPipetteStatus();
   });
 
   serialPort.on("error", (err) => {
-    state.serialConnected = false;
-    log("error", "pipette", `Serial port error: ${err.message}`);
-    emitStatus();
+    pipetteInfo.connected = false;
+    log("error", "pipette", `${model} error: ${err.message}`);
+    emitPipetteStatus();
   });
 
   serialPort.on("close", () => {
-    state.serialConnected = false;
-    log("info", "pipette", "Serial port disconnected");
-    emitStatus();
+    pipetteInfo.connected = false;
+    log("info", "pipette", `${model} disconnected`);
+    emitPipetteStatus();
 
-    // Attempt reconnection after 3 seconds
     setTimeout(() => {
-      log("info", "server", "Attempting serial port reconnection...");
-      setupSerialPort();
+      log("info", "server", `Attempting to reconnect ${model}...`);
+      connectToPipette(pipetteInfo);
     }, 3000);
   });
 
-  // Handle incoming data from pipette
   parser.on("data", (line) => {
     const lineStr = line.trim();
     if (!lineStr) return;
 
-    log("response", "pipette", lineStr);
+    log("response", "pipette", `[${model}] ${lineStr}`);
 
-    // Emit handshake step
     io.emit("handshake", {
       timestamp: new Date().toISOString(),
       line: lineStr,
       type: detectHandshakeType(lineStr),
+      pipette: model,
     });
 
-    // Process handshake
-    if (state.currentHandshake) {
-      state.currentHandshake.lines.push(lineStr);
+    if (pipetteInfo.currentHandshake) {
+      pipetteInfo.currentHandshake.lines.push(lineStr);
 
-      // Check if handshake is complete
-      if (isHandshakeComplete(state.currentHandshake.lines)) {
-        const response = parseHandshake(state.currentHandshake.lines);
+      if (isHandshakeComplete(pipetteInfo.currentHandshake.lines)) {
+        const response = parseHandshake(pipetteInfo.currentHandshake.lines);
+        pipetteInfo.currentHandshake = null;
 
-        // Clear handshake state
-        state.currentHandshake = null;
+        // Resolve dashboard/REST pending response
+        if (pipetteInfo.pendingResponse) {
+          clearTimeout(pipetteInfo.pendingResponse.timeout);
+          pipetteInfo.pendingResponse.resolve(response);
+          pipetteInfo.pendingResponse = null;
+        }
 
-        // Send response to robot
-        if (state.robotClient && state.pendingResponse) {
+        // Send response to robot if triggered by a robot command
+        if (state.robotClient && state.pendingRobotResponse) {
           const responseJson = JSON.stringify(response) + "\n";
           state.robotClient.write(responseJson);
           log("response", "server", `Sent to robot: ${responseJson.trim()}`);
-
-          // Clear pending response
-          clearTimeout(state.pendingResponse.timeout);
-          state.pendingResponse = null;
+          clearTimeout(state.pendingRobotResponse.timeout);
+          state.pendingRobotResponse = null;
         }
       }
     }
@@ -189,7 +339,51 @@ function setupSerialPort() {
   return serialPort;
 }
 
-// Detect handshake line type
+// Connect to all discovered pipettes and set first as active
+async function connectAllPipettes() {
+  log(
+    "info",
+    "server",
+    `Connecting to ${pipetteRegistry.discovered.length} pipette(s)...`,
+  );
+
+  for (const pipetteInfo of pipetteRegistry.discovered) {
+    try {
+      connectToPipette(pipetteInfo);
+    } catch (err) {
+      log(
+        "error",
+        "server",
+        `Failed to connect to ${pipetteInfo.model}: ${err.message}`,
+      );
+    }
+  }
+
+  if (pipetteRegistry.discovered.length > 0) {
+    pipetteRegistry.activeModel = pipetteRegistry.discovered[0].model;
+    log("info", "server", `Active pipette: ${pipetteRegistry.activeModel}`);
+  }
+}
+
+// Emit pipette + full system status to dashboard
+function emitPipetteStatus() {
+  const pipettesStatus = pipetteRegistry.discovered.map((p) => ({
+    model: p.model,
+    port: p.port,
+    connected: p.connected,
+  }));
+
+  io.emit("pipettes-list", pipettesStatus);
+  io.emit("active-pipette", pipetteRegistry.activeModel);
+
+  // Also emit unified status so existing listeners stay in sync
+  emitStatus();
+}
+
+// ============================================================================
+// HANDSHAKE HELPERS
+// ============================================================================
+
 function detectHandshakeType(line) {
   const upper = line.toUpperCase();
   if (upper.includes("ACK")) return "ACK";
@@ -200,34 +394,24 @@ function detectHandshakeType(line) {
   return "DATA";
 }
 
-// Check if handshake is complete
 function isHandshakeComplete(lines) {
   const hasEnd = lines.some((l) => l.toUpperCase().includes("END"));
   const hasResult = lines.some(
     (l) => l.toUpperCase().includes("OK") || l.toUpperCase().includes("ERROR"),
   );
-
-  // Complete if END found, or OK/ERROR found and no END after short wait
   return hasEnd || hasResult;
 }
 
-// Parse handshake lines into response object
 function parseHandshake(lines) {
-  const response = {
-    status: "ERROR",
-    data: null,
-    message: null,
-  };
+  const response = { status: "ERROR", data: null, message: null };
 
   for (const line of lines) {
     const upper = line.toUpperCase();
 
-    // Check for status
     if (upper.includes("OK") && !upper.includes("ERROR")) {
       response.status = "OK";
     } else if (upper.includes("ERROR")) {
       response.status = "ERROR";
-      // Extract error message
       const parts = line.split(/ERROR/i);
       if (parts[1]) {
         response.message =
@@ -235,11 +419,7 @@ function parseHandshake(lines) {
       }
     }
 
-    // Check for data (not a handshake keyword)
-    if (
-      !["ACK", "BEGIN", "END", "OK", "ERROR"].some((kw) => upper.includes(kw))
-    ) {
-      // Try to parse as JSON
+    if (!["ACK", "BEGIN", "END", "OK", "ERROR"].some((kw) => upper.includes(kw))) {
       if (line.startsWith("{") || line.startsWith("[")) {
         try {
           response.data = JSON.parse(line);
@@ -255,62 +435,79 @@ function parseHandshake(lines) {
   return response;
 }
 
-// Send command to pipette
+// ============================================================================
+// SEND TO PIPETTE (multi-registry, async)
+// ============================================================================
+
 function sendToPipette(commandStr) {
-  if (!state.serialPort || !state.serialConnected) {
-    const errorResponse = {
+  const activePipette = pipetteRegistry.discovered.find(
+    (p) => p.model === pipetteRegistry.activeModel,
+  );
+
+  if (!activePipette) {
+    log("error", "server", "No pipette selected");
+    return Promise.resolve({
       status: "ERROR",
-      message: "Serial port not connected",
+      message: "No pipette selected",
       data: null,
-    };
-    return errorResponse;
+    });
+  }
+
+  if (!activePipette.serialPort || !activePipette.connected) {
+    log("error", "server", `Pipette ${activePipette.model} not connected`);
+    return Promise.resolve({
+      status: "ERROR",
+      message: `Pipette ${activePipette.model} not connected`,
+      data: null,
+    });
   }
 
   state.commandNumber++;
 
-  // Parse and add command number
   let cmd;
   try {
     cmd = JSON.parse(commandStr);
-    if (!cmd.no) {
-      cmd.no = state.commandNumber;
-    }
+    if (!cmd.no) cmd.no = state.commandNumber;
   } catch {
     cmd = { no: state.commandNumber, data: commandStr };
   }
 
   const cmdJson = JSON.stringify(cmd) + "\n";
 
-  // Initialize handshake tracking
-  state.currentHandshake = {
+  activePipette.currentHandshake = {
     command: cmdJson.trim(),
     lines: [],
     startTime: Date.now(),
   };
 
-  // Write to serial port
-  state.serialPort.write(cmdJson, (err) => {
+  activePipette.serialPort.write(cmdJson, (err) => {
     if (err) {
-      log("error", "server", `Failed to write to serial: ${err.message}`);
+      log(
+        "error",
+        "server",
+        `Failed to write to ${activePipette.model}: ${err.message}`,
+      );
     } else {
-      log("command", "server", `Sent to pipette: ${cmdJson.trim()}`);
+      log(
+        "command",
+        "server",
+        `Sent to ${activePipette.model}: ${cmdJson.trim()}`,
+      );
     }
   });
 
-  // Set timeout for response
   return new Promise((resolve) => {
-    state.pendingResponse = {
+    activePipette.pendingResponse = {
       resolve,
       timeout: setTimeout(() => {
-        if (state.currentHandshake) {
-          const timeoutResponse = {
+        if (activePipette.currentHandshake) {
+          resolve({
             status: "ERROR",
-            message: "Pipette response timeout",
+            message: `Pipette ${activePipette.model} response timeout`,
             data: null,
-          };
-          resolve(timeoutResponse);
-          state.currentHandshake = null;
-          state.pendingResponse = null;
+          });
+          activePipette.currentHandshake = null;
+          activePipette.pendingResponse = null;
         }
       }, CONFIG.handshakeTimeout),
     };
@@ -340,7 +537,6 @@ function connectToDashboard(robotIp) {
     );
 
     const socket = new net.Socket();
-
     socket.setTimeout(5000);
 
     socket.connect(DASHBOARD_PORT, robotIp, () => {
@@ -361,14 +557,12 @@ function connectToDashboard(robotIp) {
       const response = data.toString().trim();
       log("response", "dashboard", `Dashboard response: ${response}`);
 
-      // Emit response to all clients
       io.emit("dashboard-response", {
         timestamp: new Date().toISOString(),
         response,
         success: true,
       });
 
-      // Resolve pending command if any
       if (state.dashboardPendingCommand) {
         state.dashboardPendingCommand.resolve({ success: true, response });
         state.dashboardPendingCommand = null;
@@ -426,7 +620,6 @@ function sendDashboardCommand(command) {
 
     log("command", "dashboard", `Sending dashboard command: ${command}`);
 
-    // Set up pending command with timeout
     const timeout = setTimeout(() => {
       if (state.dashboardPendingCommand) {
         state.dashboardPendingCommand = null;
@@ -449,7 +642,7 @@ function sendDashboardCommand(command) {
   });
 }
 
-const POLL_QUERIES = ['robotmode', 'programstate'];
+const POLL_QUERIES = ["robotmode", "programstate"];
 let pollIndex = 0;
 
 function startDashboardPolling() {
@@ -459,10 +652,10 @@ function startDashboardPolling() {
       stopDashboardPolling();
       return;
     }
-    if (state.dashboardPendingCommand) return; // skip if user command in flight
+    if (state.dashboardPendingCommand) return;
     const query = POLL_QUERIES[pollIndex % 2];
     pollIndex++;
-    state.dashboardSocket.write(query + '\n');
+    state.dashboardSocket.write(query + "\n");
   }, 500);
 }
 
@@ -489,10 +682,45 @@ const tcpServer = net.createServer((socket) => {
     const command = data.toString("utf-8").trim();
     log("command", "robot", `Received: ${command}`);
 
-    // Forward to pipette and wait for response
-    const response = await sendToPipette(command);
+    // Check if first word is a known pipette model (for per-model routing)
+    const parts = command.split(" ");
+    const firstWord = parts[0];
+    const pipette = pipetteRegistry.discovered.find(
+      (p) => p.model === firstWord,
+    );
 
-    // Send response back to robot
+    let actualCommand;
+    if (pipette) {
+      pipetteRegistry.activeModel = firstWord;
+      actualCommand = parts.slice(1).join(" ");
+      log("info", "robot", `Switched to pipette: ${firstWord}`);
+      io.emit("active-pipette", firstWord);
+    } else {
+      actualCommand = command;
+    }
+
+    // Track pending robot response so connectToPipette's data handler can reply
+    const response = await new Promise((resolve) => {
+      state.pendingRobotResponse = {
+        resolve,
+        timeout: setTimeout(() => {
+          state.pendingRobotResponse = null;
+          resolve({
+            status: "ERROR",
+            message: "Robot response timeout",
+            data: null,
+          });
+        }, CONFIG.handshakeTimeout + 1000),
+      };
+      sendToPipette(actualCommand).then((res) => {
+        if (state.pendingRobotResponse) {
+          clearTimeout(state.pendingRobotResponse.timeout);
+          state.pendingRobotResponse = null;
+          resolve(res);
+        }
+      });
+    });
+
     const responseJson = JSON.stringify(response) + "\n";
     socket.write(responseJson);
     log("response", "server", `Sent to robot: ${responseJson.trim()}`);
@@ -535,10 +763,7 @@ const qrServer = net.createServer((socket) => {
 
     log("info", "qr", `QR code received: ${qrValue}`);
 
-    io.emit("qr-update", {
-      value: qrValue,
-      timestamp: timestamp,
-    });
+    io.emit("qr-update", { value: qrValue, timestamp });
 
     socket.write("OK\n");
   });
@@ -564,43 +789,59 @@ qrServer.listen(CONFIG.qrPort, "0.0.0.0", () => {
 // HTTP + WEBSOCKET SERVER FOR WEB DASHBOARD
 // ============================================================================
 
-// REST API: Get current status
 app.get("/api/status", (req, res) => {
   res.json(emitStatus());
 });
 
-// REST API: Send test command
 app.post("/api/command", async (req, res) => {
   const { command } = req.body;
-
-  if (!command) {
-    return res.status(400).json({ error: "Command required" });
-  }
+  if (!command) return res.status(400).json({ error: "Command required" });
 
   log("command", "dashboard", `Test command: ${command}`);
   const response = await sendToPipette(command);
   res.json(response);
 });
 
-// WebSocket connection
 io.on("connection", (socket) => {
   log("info", "dashboard", `Web client connected: ${socket.id}`);
 
-  // Send initial status
+  // Send initial status and pipette list
   socket.emit("status", emitStatus());
+  socket.emit(
+    "pipettes-list",
+    pipetteRegistry.discovered.map((p) => ({
+      model: p.model,
+      port: p.port,
+      connected: p.connected,
+    })),
+  );
+  socket.emit("active-pipette", pipetteRegistry.activeModel);
 
   socket.on("disconnect", () => {
     log("info", "dashboard", `Web client disconnected: ${socket.id}`);
   });
 
-  // Handle test command from dashboard
+  // Pipette selection from dashboard
+  socket.on("select-pipette", (model) => {
+    log("info", "dashboard", `Selecting pipette: ${model}`);
+    const pipette = pipetteRegistry.discovered.find((p) => p.model === model);
+    if (pipette) {
+      pipetteRegistry.activeModel = model;
+      io.emit("active-pipette", model);
+      log("info", "server", `Active pipette changed to: ${model}`);
+    } else {
+      log("error", "dashboard", `Pipette not found: ${model}`);
+    }
+  });
+
+  // Test command from dashboard
   socket.on("send-command", async (command) => {
     log("command", "dashboard", `Test command: ${command}`);
     const response = await sendToPipette(command);
     socket.emit("command-response", response);
   });
 
-  // Handle dashboard server connection
+  // Dashboard server connection
   socket.on("dashboard-connect", async (robotIp) => {
     try {
       await connectToDashboard(robotIp);
@@ -616,7 +857,6 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Handle dashboard server disconnection
   socket.on("dashboard-disconnect", () => {
     disconnectFromDashboard();
     socket.emit("dashboard-command-response", {
@@ -625,7 +865,6 @@ io.on("connection", (socket) => {
     });
   });
 
-  // Handle dashboard commands
   socket.on("dashboard-command", async (command) => {
     try {
       const result = await sendDashboardCommand(command);
@@ -656,22 +895,47 @@ httpServer.listen(CONFIG.httpPort, () => {
 // STARTUP
 // ============================================================================
 
-setupSerialPort();
+async function startServer() {
+  log("info", "server", "=".repeat(60));
+  log("info", "server", "Pipette Bridge Server Starting");
+  log("info", "server", "=".repeat(60));
+  log("info", "server", `TCP port (robot): ${CONFIG.tcpPort}`);
+  log("info", "server", `QR port: ${CONFIG.qrPort}`);
+  log("info", "server", `HTTP port (dashboard): ${CONFIG.httpPort}`);
+  log("info", "server", "=".repeat(60));
 
-log("info", "server", "=".repeat(60));
-log("info", "server", "Pipette Bridge Server Started");
-log("info", "server", "=".repeat(60));
-log("info", "server", `Serial port: ${CONFIG.serialPort}`);
-log("info", "server", `TCP port (robot): ${CONFIG.tcpPort}`);
-log("info", "server", `QR port: ${CONFIG.qrPort}`);
-log("info", "server", `HTTP port (dashboard): ${CONFIG.httpPort}`);
-log("info", "server", "=".repeat(60));
+  const discovered = await discoverPipettes();
+  pipetteRegistry.discovered = discovered;
+
+  if (discovered.length === 0) {
+    log("error", "server", "No pipettes discovered! Please check connections.");
+    log(
+      "info",
+      "server",
+      "Server will continue running and wait for pipettes...",
+    );
+  } else {
+    await connectAllPipettes();
+
+    log("info", "server", "=".repeat(60));
+    log("info", "server", "Pipette Summary:");
+    for (const p of pipetteRegistry.discovered) {
+      log("info", "server", `  - ${p.model} on ${p.port}`);
+    }
+    log("info", "server", `Active pipette: ${pipetteRegistry.activeModel}`);
+    log("info", "server", "=".repeat(60));
+  }
+}
+
+startServer();
 
 // Graceful shutdown
 process.on("SIGINT", () => {
   log("info", "server", "Shutting down...");
-  if (state.serialPort) {
-    state.serialPort.close();
+  for (const p of pipetteRegistry.discovered) {
+    if (p.serialPort && p.serialPort.isOpen) {
+      p.serialPort.close();
+    }
   }
   tcpServer.close();
   qrServer.close();
