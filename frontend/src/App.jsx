@@ -4,7 +4,7 @@ import { io } from "socket.io-client";
 import ConnectionStatus from "./components/ConnectionStatus";
 import Home from "./pages/Home";
 import RobotControl from "./pages/RobotControl";
-import OperatorPanel from "./pages/OperatorPanel";
+import OperatorPanel from "./pages/OperatorPanel2";
 
 // const BACKEND_URL = "http://localhost:3001";
 // const BACKEND_URL = "http://192.168.1.88:3001";
