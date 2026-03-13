@@ -136,20 +136,14 @@ function OperatorPanel2({ socket, qrValue, dashboardStatus }) {
                 <span className="led-display-text">{qrValue || "---"}</span>
               </div>
               <div className="led-display-divider" />
-              <div className="led-display-row">
-                <div className="led-display-section" ref={statusContainerRef}>
-                  <span className="led-display-label">Status</span>
-                  <span
-                    className={`led-display-text ${shouldScroll ? "led-scroll" : ""}`}
-                    ref={statusRef}
-                  >
-                    {status}
-                  </span>
-                </div>
-                <div className="led-display-section led-display-section-bordered">
-                  <span className="led-display-label">Robot Mode</span>
-                  <span className="led-display-text">{robotMode || "---"}</span>
-                </div>
+              <div className="led-display-section" ref={statusContainerRef}>
+                <span className="led-display-label">Status</span>
+                <span
+                  className={`led-display-text ${shouldScroll ? "led-scroll" : ""}`}
+                  ref={statusRef}
+                >
+                  {status}
+                </span>
               </div>
             </div>
           </div>
