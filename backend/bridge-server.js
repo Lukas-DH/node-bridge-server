@@ -14,12 +14,16 @@
  */
 
 import net from "net";
+import path from "path";
+import { fileURLToPath } from "url";
 import { SerialPort } from "serialport";
 import { ReadlineParser } from "@serialport/parser-readline";
 import express from "express";
 import { createServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import cors from "cors";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Configuration
 const CONFIG = {
@@ -60,6 +64,7 @@ const pipetteRegistry = {
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.static(path.join(__dirname, "..", "frontend", "dist")));
 
 const httpServer = createServer(app);
 const io = new SocketIOServer(httpServer, {
@@ -816,6 +821,10 @@ app.post("/api/command", async (req, res) => {
   log("command", "dashboard", `Test command: ${command}`);
   const response = await sendToPipette(command);
   res.json(response);
+});
+
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "..", "frontend", "dist", "index.html"));
 });
 
 io.on("connection", (socket) => {
