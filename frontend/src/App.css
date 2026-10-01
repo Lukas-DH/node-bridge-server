@@ -582,7 +582,8 @@ code {
 
 /* Responsive Design */
 @media (max-width: 1200px) {
-  .app-content {
+  .app-content,
+  .dishlog-page {
     grid-template-columns: 1fr;
   }
 
@@ -1010,6 +1011,235 @@ code {
   .load-program-row {
     flex-direction: column;
   }
+}
+
+/* ================================
+   Dish Log
+   ================================ */
+
+.dishlog-page {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  max-width: 1800px;
+  margin: 0 auto;
+  width: 100%;
+  align-items: start;
+}
+
+.dishlog-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.dishlog-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dishlog-field > span {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+}
+
+.dishlog-field .ip-input,
+.dishlog-field .filter-input {
+  min-width: 9rem;
+}
+
+.dishlog-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-left: auto;
+}
+
+.dishlog-loading {
+  font-size: 0.85rem;
+  color: #888;
+  align-self: center;
+}
+
+/* Stat tiles */
+.dishlog-stat-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.dishlog-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  background: #222;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.dishlog-stat-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+}
+
+.dishlog-stat-value {
+  font-size: 1.7rem;
+  font-weight: 600;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+
+/* Tables */
+.dishlog-table-wrap {
+  max-height: 32rem;
+  overflow-y: auto;
+  margin-top: 1rem;
+  border-radius: 8px;
+}
+
+.dishlog-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.dishlog-table thead th {
+  position: sticky;
+  top: 0;
+  background: #2a2a2a;
+  text-align: left;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #888;
+  font-weight: 600;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid #3a3a3a;
+}
+
+.dishlog-table td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid #3a3a3a;
+  color: #e0e0e0;
+  vertical-align: middle;
+}
+
+.dishlog-table tbody tr:hover td {
+  background: #313131;
+}
+
+.dishlog-table tfoot td {
+  padding: 0.55rem 0.6rem;
+  font-weight: 600;
+  color: #fff;
+  border-top: 1px solid #3a3a3a;
+  border-bottom: none;
+}
+
+/* Cycle times and counts must align on the decimal */
+.dishlog-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.dishlog-seq {
+  color: #888;
+}
+
+.dishlog-jig {
+  display: inline-block;
+  font-family: "Courier New", Courier, monospace;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: #333;
+  border: 1px solid #454545;
+  border-radius: 5px;
+  padding: 0.1rem 0.45rem;
+  color: #fff;
+}
+
+.dishlog-flag {
+  display: inline-block;
+  margin-left: 0.4rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #2a2a2a;
+  background: #ffd43b;
+  border-radius: 4px;
+  padding: 0.05rem 0.35rem;
+  cursor: help;
+}
+
+.dishlog-row-suspect td {
+  background: rgba(255, 212, 59, 0.07);
+}
+
+/* Chart */
+.dishlog-chart {
+  position: relative;
+  margin-top: 1rem;
+}
+
+.dishlog-chart svg {
+  display: block;
+  overflow: visible;
+}
+
+.dishlog-chart-empty {
+  margin-top: 1rem;
+  padding: 3rem 1rem;
+  text-align: center;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.dishlog-tooltip {
+  position: absolute;
+  transform: translate(-50%, calc(-100% - 10px));
+  background: #1a1a1a;
+  border: 1px solid #454545;
+  border-radius: 6px;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.82rem;
+  color: #e0e0e0;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 5;
+}
+
+.dishlog-tooltip strong {
+  color: #fff;
+}
+
+.dishlog-tooltip-sub {
+  display: block;
+  color: #888;
+  font-size: 0.74rem;
+  margin-top: 0.1rem;
+}
+
+.dishlog-warning {
+  margin-top: 1rem;
+  padding: 0.6rem 0.8rem;
+  border-left: 3px solid #ffd43b;
+  background: rgba(255, 212, 59, 0.08);
+  border-radius: 0 6px 6px 0;
+  font-size: 0.85rem;
+  color: #e0e0e0;
 }
 
 /* ================================

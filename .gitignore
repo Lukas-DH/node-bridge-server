@@ -13,6 +13,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Dish log production records (append-only JSONL) — never commit
+backend/data/
+
 # Environment files (keep secrets local)
 .env
 .env.*.local

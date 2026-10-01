@@ -5,9 +5,10 @@ import ConnectionStatus from "./components/ConnectionStatus";
 import Home from "./pages/Home";
 import RobotControl from "./pages/RobotControl";
 import OperatorPanel from "./pages/OperatorPanel2";
+import DishLog from "./pages/DishLog";
 
 // const BACKEND_URL = "http://192.168.1.20:3001";
-const BACKEND_URL = `http://${window.location.hostname}:3001`;
+export const BACKEND_URL = `http://${window.location.hostname}:3001`;
 
 export const SocketContext = createContext(null);
 
@@ -19,9 +20,12 @@ function App() {
     server: "disconnected",
     dashboard: "disconnected",
     qr: "disconnected",
+    dish: "disconnected",
     qrValue: null,
   });
   const [logs, setLogs] = useState([]);
+  const [dishEvents, setDishEvents] = useState([]);
+  const [dishStats, setDishStats] = useState(null);
   const [handshakeSteps, setHandshakeSteps] = useState([]);
   const [connected, setConnected] = useState(false);
   const [activePipette, setActivePipette] = useState(null);
@@ -47,6 +51,7 @@ function App() {
         server: "disconnected",
         dashboard: "disconnected",
         qr: "disconnected",
+        dish: "disconnected",
         qrValue: null,
       });
     });
@@ -90,6 +95,23 @@ function App() {
         qrValue: data.value,
         qrTimestamp: data.timestamp,
       }));
+    });
+
+    // Dish log. Subscribed here rather than in DishLog.jsx because
+    // "dish-snapshot" fires exactly once on socket connect — a page mounting
+    // later would never see it. It also means dishes completed while the user
+    // is on another page are already present when they navigate here.
+    newSocket.on("dish-snapshot", (snapshot) => {
+      setDishEvents(snapshot?.events || []);
+      setDishStats(snapshot?.stats || null);
+    });
+
+    newSocket.on("dish-event", (record) => {
+      setDishEvents((prev) => [record, ...prev].slice(0, 300)); // newest-first
+    });
+
+    newSocket.on("dish-stats", (stats) => {
+      setDishStats(stats);
     });
 
     setSocket(newSocket);
@@ -152,6 +174,12 @@ function App() {
               >
                 Robot Control
               </Link>
+              <Link
+                to="/dishlog"
+                className={`nav-link ${location.pathname === "/dishlog" ? "active" : ""}`}
+              >
+                Dish Log
+              </Link>
             </nav>
           </div>
           <ConnectionStatus status={status} connected={connected} />
@@ -170,6 +198,16 @@ function App() {
                 clearLogs={clearLogs}
                 clearHandshake={clearHandshake}
                 socket={socket}
+              />
+            }
+          />
+          <Route
+            path="/dishlog"
+            element={
+              <DishLog
+                socket={socket}
+                liveEvents={dishEvents}
+                stats={dishStats}
               />
             }
           />

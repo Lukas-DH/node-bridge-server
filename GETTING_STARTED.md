@@ -99,6 +99,24 @@ response = socket_read_string("pipette", timeout=5)
 socket_close("pipette")
 ```
 
+### Option 3: Log completed dishes (port 5003)
+
+Separate port and separate connection name — port 5001 forwards everything it
+receives to the pipette, so a jig ID must not go there.
+
+```python
+socket_open("192.168.1.100", 5003, "dishlog")  # once, at program start
+
+# ...after each completed dish:
+socket_send_line("J01", "dishlog")             # _line, NOT _string: only _line appends \n
+ack = socket_read_string("dishlog", timeout=2) # "OK"
+
+socket_close("dishlog")                        # at program end
+```
+
+Records land in `backend/data/dishlog.jsonl` and show up live at
+`http://<host>:3001/dishlog`.
+
 ## Common Issues
 
 ### Backend: "Cannot find module 'serialport'"
@@ -128,7 +146,8 @@ ls /dev/tty.*
 
 ```bash
 # Find process using port
-lsof -i :5001  # Backend TCP
+lsof -i :5001  # Backend TCP (pipette)
+lsof -i :5003  # Backend TCP (dish log)
 lsof -i :3001  # Backend HTTP/WS
 lsof -i :3000  # Frontend dev
 

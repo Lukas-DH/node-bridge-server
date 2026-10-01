@@ -14,6 +14,7 @@
  */
 
 import net from "net";
+import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { SerialPort } from "serialport";
@@ -30,9 +31,14 @@ const CONFIG = {
   serialBaudRate: 230400,
   tcpPort: 5001,
   qrPort: 5002,
+  dishPort: 5003,
   httpPort: 3001,
   handshakeTimeout: 5000, // 5 seconds
   discoveryTimeout: 5000, // 5 seconds per port during discovery
+  dishDedupMs: 1500, // same jig inside this window is a robot retry, not a new dish
+  dishIdleFlushMs: 150, // flush an unterminated buffer (socket_send_string sends no \n)
+  dishMaxCycleMs: 2 * 60 * 60 * 1000, // a longer gap is not a real cycle time
+  dishMaxLineBytes: 512,
 };
 
 // State (robot / dashboard / qr fields only — pipette state lives in pipetteRegistry)
@@ -52,6 +58,11 @@ const state = {
   currentQrValue: null,
   qrConnected: false,
   qrClient: null,
+  // Dish log receiver state. A Set, not a single slot: the existing qrClient /
+  // robotClient pattern breaks when a second client connects, because the FIRST
+  // one disconnecting flips connected to false while the second is still live.
+  dishSockets: new Set(),
+  dishConnected: false,
 };
 
 // Pipette Registry for multi-pipette support
@@ -79,7 +90,7 @@ function log(type, source, message, data = null) {
   const logEntry = {
     timestamp: new Date().toISOString(),
     type, // 'info', 'error', 'command', 'response', 'handshake'
-    source, // 'robot', 'pipette', 'server'
+    source, // 'robot', 'pipette', 'server', 'dashboard', 'qr', 'dish'
     message,
     data,
   };
@@ -109,10 +120,670 @@ function emitStatus() {
         ? "connecting"
         : "disconnected",
     qr: state.qrConnected ? "connected" : "disconnected",
+    dish: state.dishConnected ? "connected" : "disconnected",
   };
 
   io.emit("status", status);
   return status;
+}
+
+// ============================================================================
+// DISH LOG STORE (append-only JSONL in backend/data/)
+// ============================================================================
+//
+// Initialised at module scope, BEFORE any TCP listener exists. startServer()
+// blocks up to CONFIG.discoveryTimeout per serial port, so a dish arriving in
+// that window with the store uninitialised would be written with seq 1 and
+// silently truncate the file's sequence.
+
+const DISH_DATA_DIR = path.join(__dirname, "data");
+const DISH_ACTIVE_FILE = path.join(DISH_DATA_DIR, "dishlog.jsonl");
+const DISH_ACTIVE_NAME = "dishlog.jsonl";
+const DISH_FILE_RE = /^dishlog(-\d{4}-\d{2})?\.jsonl$/;
+const DISH_SCHEMA_V = 1;
+const DISH_ID_RE = /^[A-Z0-9][A-Z0-9_.-]{0,31}$/;
+// These belong to the QR port's vocabulary (see qrServer) — never a dish type.
+const DISH_IGNORE = new Set(["", "OK", "PING", "FINISHED", "IDLE", "NULL"]);
+const DISH_MEM_MAX = 20000; // ~4 weeks of live events; aggregates cover all history
+const DISH_SNAPSHOT_N = 100; // websocket hydrate cap
+const DISH_LIMIT_DEFAULT = 200;
+const DISH_LIMIT_MAX = 5000;
+const DISH_RANGE_MAX_DAYS = 400;
+const DISH_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const SERVER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const BOOT_ID = Math.random().toString(16).slice(2, 10);
+
+// en-CA yields YYYY-MM-DD. Never hand-roll with getFullYear() — that silently
+// uses the process TZ and is the classic off-by-one-day bug.
+const dishDayFormatter = new Intl.DateTimeFormat("en-CA", {
+  timeZone: SERVER_TZ,
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
+const dishHourFormatter = new Intl.DateTimeFormat("en-GB", {
+  timeZone: SERVER_TZ,
+  hour: "2-digit",
+  hourCycle: "h23",
+});
+
+const dishLog = {
+  events: [], // ring of the most recent DISH_MEM_MAX records
+  fd: null, // long-lived append fd
+  activeMonth: null, // "YYYY-MM" of the records in dishlog.jsonl
+  lastSeq: 0,
+  lastTsMs: null, // for cycleMs + dedupe
+  lastJigId: null,
+  totalsByJig: new Map(), // jigId -> {count, firstTs, lastTs}
+  dayIndex: new Map(), // "YYYY-MM-DD" (local) -> Map<jigId, count>
+  hourIndex: new Map(), // "YYYY-MM-DDTHH" (local) -> count
+  total: 0,
+  suspect: 0,
+  ignored: 0,
+  dedup: 0,
+  writeErrors: 0,
+  parseErrors: 0,
+  droppedFromMemory: 0,
+  clockWarning: false,
+  loaded: false,
+  statsTimer: null,
+};
+
+function dishDayKey(ms) {
+  return dishDayFormatter.format(new Date(ms));
+}
+
+function dishHourKey(ms) {
+  return `${dishDayKey(ms)}T${dishHourFormatter.format(new Date(ms))}`;
+}
+
+// Pure calendar-label arithmetic — stepping UTC days over date-only strings is
+// exact and sidesteps DST entirely.
+function dishEnumerateDays(fromDay, toDay) {
+  const days = [];
+  let ms = Date.parse(`${fromDay}T00:00:00Z`);
+  const end = Date.parse(`${toDay}T00:00:00Z`);
+  if (Number.isNaN(ms) || Number.isNaN(end)) return days;
+  while (ms <= end && days.length < DISH_RANGE_MAX_DAYS) {
+    days.push(new Date(ms).toISOString().slice(0, 10));
+    ms += 86400000;
+  }
+  return days;
+}
+
+// Single funnel for every record, whether it came from disk or the wire.
+// "suspect" records land in events and total but NEVER in the aggregates, so
+// garbage can't pollute a throughput number.
+function indexDishRecord(rec) {
+  if (typeof rec.seq === "number" && rec.seq > dishLog.lastSeq) {
+    dishLog.lastSeq = rec.seq;
+  }
+
+  const tsMs = Date.parse(rec.ts);
+  if (!Number.isNaN(tsMs)) dishLog.lastTsMs = tsMs;
+  dishLog.lastJigId = rec.jigId;
+  dishLog.total++;
+
+  if (rec.status === "suspect") {
+    dishLog.suspect++;
+  } else {
+    const jigTotal = dishLog.totalsByJig.get(rec.jigId);
+    if (jigTotal) {
+      jigTotal.count++;
+      jigTotal.lastTs = rec.ts;
+    } else {
+      dishLog.totalsByJig.set(rec.jigId, {
+        count: 1,
+        firstTs: rec.ts,
+        lastTs: rec.ts,
+      });
+    }
+
+    let day = dishLog.dayIndex.get(rec.day);
+    if (!day) {
+      day = new Map();
+      dishLog.dayIndex.set(rec.day, day);
+    }
+    day.set(rec.jigId, (day.get(rec.jigId) || 0) + 1);
+
+    if (!Number.isNaN(tsMs)) {
+      const hk = dishHourKey(tsMs);
+      dishLog.hourIndex.set(hk, (dishLog.hourIndex.get(hk) || 0) + 1);
+    }
+  }
+
+  dishLog.events.push(rec);
+  while (dishLog.events.length > DISH_MEM_MAX) {
+    dishLog.events.shift();
+    dishLog.droppedFromMemory++;
+  }
+}
+
+function openDishFd() {
+  dishLog.fd = fs.openSync(DISH_ACTIVE_FILE, "a");
+
+  // A power cut mid-writeSync leaves a torn final line with NO trailing
+  // newline. Heal it before appending, or the next record is concatenated onto
+  // the garbage and lost too — turning one lost dish into two.
+  try {
+    const size = fs.fstatSync(dishLog.fd).size;
+    if (size > 0) {
+      const tail = Buffer.alloc(1);
+      const readFd = fs.openSync(DISH_ACTIVE_FILE, "r");
+      try {
+        fs.readSync(readFd, tail, 0, 1, size - 1);
+      } finally {
+        fs.closeSync(readFd);
+      }
+      if (tail[0] !== 0x0a) {
+        fs.writeSync(dishLog.fd, "\n");
+        fs.fsyncSync(dishLog.fd);
+        log(
+          "error",
+          "dish",
+          "Healed a torn final line in dishlog.jsonl (missing newline added)",
+        );
+      }
+    }
+  } catch (err) {
+    log("error", "dish", `Could not check dish log tail: ${err.message}`);
+  }
+}
+
+function closeDishLog() {
+  if (dishLog.fd === null) return;
+  try {
+    fs.fsyncSync(dishLog.fd);
+  } catch {
+    // closing anyway
+  }
+  try {
+    fs.closeSync(dishLog.fd);
+  } catch {
+    // closing anyway
+  }
+  dishLog.fd = null;
+}
+
+// Driven by a write, never a timer, so nothing races an in-flight append.
+function dishRotateIfNeeded(ms) {
+  const month = dishDayKey(ms).slice(0, 7);
+  if (dishLog.activeMonth === null) {
+    dishLog.activeMonth = month;
+    return;
+  }
+  if (month === dishLog.activeMonth) return;
+
+  closeDishLog();
+  const archive = path.join(
+    DISH_DATA_DIR,
+    `dishlog-${dishLog.activeMonth}.jsonl`,
+  );
+  try {
+    if (fs.existsSync(DISH_ACTIVE_FILE)) {
+      fs.renameSync(DISH_ACTIVE_FILE, archive);
+      log("info", "dish", `Rolled dish log over to ${path.basename(archive)}`);
+    }
+  } catch (err) {
+    log("error", "dish", `Dish log rollover failed: ${err.message}`);
+  }
+  dishLog.activeMonth = month;
+  openDishFd();
+}
+
+// fsyncSync is the whole point: appendFileSync's close() does NOT flush the
+// page cache, so on ext4 with the default commit=5 the last record — exactly
+// the one you care about after a power cut — can vanish. One blocking fsync per
+// completed dish is ~0.03% duty cycle.
+function writeDishRecord(rec) {
+  const line = JSON.stringify(rec) + "\n";
+  try {
+    dishRotateIfNeeded(Date.parse(rec.ts));
+    if (dishLog.fd === null) openDishFd();
+    fs.writeSync(dishLog.fd, line);
+    fs.fsyncSync(dishLog.fd);
+    return true;
+  } catch (err) {
+    dishLog.writeErrors++;
+    log("error", "dish", `Dish log write failed: ${err.message}`);
+    closeDishLog(); // force a reopen next time (EBADF after a rotate/unlink)
+    return false;
+  }
+}
+
+function dishLogFiles() {
+  return fs
+    .readdirSync(DISH_DATA_DIR)
+    .filter((name) => DISH_FILE_RE.test(name))
+    .sort((a, b) => {
+      // archive names sort chronologically; the active file always goes last
+      if (a === DISH_ACTIVE_NAME) return 1;
+      if (b === DISH_ACTIVE_NAME) return -1;
+      return a.localeCompare(b);
+    });
+}
+
+function initDishLog() {
+  fs.mkdirSync(DISH_DATA_DIR, { recursive: true });
+
+  let activeLastDay = null;
+
+  for (const name of dishLogFiles()) {
+    const full = path.join(DISH_DATA_DIR, name);
+    let bad = 0;
+    const lines = fs.readFileSync(full, "utf8").split("\n");
+    for (const raw of lines) {
+      if (!raw) continue;
+      let rec;
+      try {
+        rec = JSON.parse(raw);
+      } catch {
+        // A torn final line is EXPECTED after a power cut mid-writeSync.
+        // Never let one bad byte stop the boot.
+        bad++;
+        continue;
+      }
+      indexDishRecord(rec);
+      if (name === DISH_ACTIVE_NAME && rec.day) activeLastDay = rec.day;
+    }
+    if (bad) {
+      dishLog.parseErrors += bad;
+      log("error", "dish", `${name}: ${bad} unparseable line(s) skipped`);
+    }
+  }
+
+  dishLog.activeMonth = (activeLastDay || dishDayKey(Date.now())).slice(0, 7);
+  openDishFd();
+  dishLog.loaded = true;
+
+  if (dishLog.lastTsMs !== null && dishLog.lastTsMs > Date.now() + 60000) {
+    dishLog.clockWarning = true;
+  }
+}
+
+function recordDish(rawInput, srcIp) {
+  const raw = String(rawInput).replace(/\r/g, "").trim();
+
+  // Tolerant parsing: "J01" or "J01;prog=sperm_wash;op=anna". Unknown keys land
+  // in meta, so the URScript can start sending extras with no server change.
+  const parts = raw.split(";");
+  const jigId = parts[0].trim().toUpperCase();
+
+  if (DISH_IGNORE.has(jigId)) {
+    dishLog.ignored++;
+    log("info", "dish", `Ignored control value: ${raw || "(empty)"}`);
+    return { action: "ignored" };
+  }
+
+  const meta = {};
+  let malformedExtras = false;
+  for (const pair of parts.slice(1)) {
+    const eq = pair.indexOf("=");
+    const key = eq === -1 ? "" : pair.slice(0, eq).trim();
+    if (!key) {
+      // Don't silently discard a segment we can't read — it makes the whole
+      // message suspect rather than quietly counting a clean dish.
+      malformedExtras = true;
+      continue;
+    }
+    meta[key] = pair.slice(eq + 1).trim();
+  }
+
+  const nowMs = Date.now();
+
+  if (
+    dishLog.lastJigId === jigId &&
+    dishLog.lastTsMs !== null &&
+    nowMs - dishLog.lastTsMs >= 0 &&
+    nowMs - dishLog.lastTsMs < CONFIG.dishDedupMs
+  ) {
+    dishLog.dedup++;
+    log(
+      "info",
+      "dish",
+      `Duplicate ${jigId} within ${CONFIG.dishDedupMs}ms — not counted`,
+    );
+    return { action: "dedup" };
+  }
+
+  // Log-and-store, never silently drop: this is a production ledger, and a
+  // dropped line undercounts dishes with no trace. Suspects are excluded from
+  // the aggregates instead.
+  const known = DISH_ID_RE.test(jigId) && !malformedExtras;
+  if (!known) {
+    log("error", "dish", `Suspect dish value stored: ${JSON.stringify(raw)}`);
+  }
+
+  let cycleMs = null;
+  if (dishLog.lastTsMs !== null) {
+    const delta = nowMs - dishLog.lastTsMs;
+    if (delta >= 0 && delta <= CONFIG.dishMaxCycleMs) {
+      cycleMs = delta;
+    } else if (delta < 0) {
+      meta.clockJump = true; // never display a negative cycle time
+    }
+  }
+
+  // Did the robot report the dish the vision system actually saw?
+  if (state.currentQrValue && state.currentQrValue.toUpperCase() !== jigId) {
+    meta.qr = state.currentQrValue;
+  }
+
+  const operator = meta.op !== undefined ? meta.op : null;
+  delete meta.op;
+
+  const record = {
+    v: DISH_SCHEMA_V,
+    seq: dishLog.lastSeq + 1,
+    ts: new Date(nowMs).toISOString(),
+    day: dishDayKey(nowMs),
+    jigId,
+    operator,
+    cycleMs,
+    status: known ? "ok" : "suspect",
+    raw,
+    src: srcIp,
+    boot: BOOT_ID,
+    up: Math.round(performance.now()),
+    meta,
+  };
+
+  writeDishRecord(record); // failure is non-fatal — still index, emit and ack
+  indexDishRecord(record);
+
+  log(
+    "info",
+    "dish",
+    `Dish recorded: ${jigId} (seq ${record.seq}` +
+      (cycleMs !== null ? `, cycle ${(cycleMs / 1000).toFixed(1)}s` : "") +
+      ")",
+  );
+  io.emit("dish-event", record);
+  emitDishStats();
+
+  return { action: "stored", record };
+}
+
+// ---------------------------------------------------------------------------
+// Queries
+// ---------------------------------------------------------------------------
+
+// Date-only bounds compare against the stored local `day` field (lexicographic
+// on ISO dates), so there is no timezone maths anywhere. Full ISO instants
+// compare against `ts`.
+function dishRangeFilter({ from, to, jig }) {
+  const jigUpper = jig ? jig.trim().toUpperCase() : null;
+  const fromDay = from && DISH_DAY_RE.test(from) ? from : null;
+  const toDay = to && DISH_DAY_RE.test(to) ? to : null;
+  const fromMs = from && !fromDay ? Date.parse(from) : null;
+  const toMs = to && !toDay ? Date.parse(to) : null;
+
+  return (rec) => {
+    if (jigUpper && rec.jigId !== jigUpper) return false;
+    if (fromDay && rec.day < fromDay) return false;
+    if (toDay && rec.day > toDay) return false;
+    if (fromMs !== null && Date.parse(rec.ts) < fromMs) return false;
+    if (toMs !== null && Date.parse(rec.ts) > toMs) return false;
+    return true;
+  };
+}
+
+function validateDishRange(from, to) {
+  for (const [name, value] of [
+    ["from", from],
+    ["to", to],
+  ]) {
+    if (!value) continue;
+    if (DISH_DAY_RE.test(value)) continue;
+    if (Number.isNaN(Date.parse(value))) return `Invalid ${name}: ${value}`;
+  }
+  const a = from
+    ? Date.parse(DISH_DAY_RE.test(from) ? `${from}T00:00:00Z` : from)
+    : null;
+  const b = to
+    ? Date.parse(DISH_DAY_RE.test(to) ? `${to}T00:00:00Z` : to)
+    : null;
+  if (a !== null && b !== null) {
+    if (b < a) return "`to` is before `from`";
+    if (b - a > DISH_RANGE_MAX_DAYS * 86400000) {
+      return `Range exceeds ${DISH_RANGE_MAX_DAYS} days`;
+    }
+  }
+  return null;
+}
+
+function dishDayOf(bound, fallback) {
+  if (!bound) return fallback;
+  if (DISH_DAY_RE.test(bound)) return bound;
+  const ms = Date.parse(bound);
+  return Number.isNaN(ms) ? fallback : dishDayKey(ms);
+}
+
+// Served from the ring when the range is inside it (the common "today" case),
+// otherwise from disk, opening only the months the range touches.
+function dishEventsInRange({ from, to, jig, limit, order }) {
+  const predicate = dishRangeFilter({ from, to, jig });
+  const oldestInMemory = dishLog.events.length ? dishLog.events[0] : null;
+  const fromDay = from ? dishDayOf(from, null) : null;
+  const ringCovers =
+    dishLog.droppedFromMemory === 0 ||
+    (oldestInMemory !== null &&
+      fromDay !== null &&
+      oldestInMemory.day <= fromDay);
+
+  const source = ringCovers ? "memory" : "disk";
+  const matched = ringCovers
+    ? dishLog.events.filter(predicate)
+    : dishEventsFromDisk(predicate, limit, order);
+
+  const ordered =
+    order === "asc"
+      ? matched.slice().sort((a, b) => a.seq - b.seq)
+      : matched.slice().sort((a, b) => b.seq - a.seq);
+
+  return {
+    source,
+    truncated: ordered.length > limit,
+    events: ordered.slice(0, limit),
+  };
+}
+
+function dishEventsFromDisk(predicate, limit, order) {
+  const files = dishLogFiles();
+  // Newest file first for a desc query so we can stop early.
+  const ordered = order === "asc" ? files : files.slice().reverse();
+  const out = [];
+
+  for (const name of ordered) {
+    let lines;
+    try {
+      lines = fs
+        .readFileSync(path.join(DISH_DATA_DIR, name), "utf8")
+        .split("\n");
+    } catch (err) {
+      log("error", "dish", `Could not read ${name}: ${err.message}`);
+      continue;
+    }
+    if (order !== "asc") lines.reverse();
+
+    for (const raw of lines) {
+      if (!raw) continue;
+      let rec;
+      try {
+        rec = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (predicate(rec)) out.push(rec);
+      if (out.length > limit) return out;
+    }
+  }
+  return out;
+}
+
+function dishByJigFromDays(days) {
+  const totals = new Map();
+  for (const day of days) {
+    const perJig = dishLog.dayIndex.get(day);
+    if (!perJig) continue;
+    for (const [jigId, count] of perJig) {
+      totals.set(jigId, (totals.get(jigId) || 0) + count);
+    }
+  }
+  return [...totals.entries()]
+    .map(([jigId, count]) => ({ jigId, count }))
+    .sort((a, b) => b.count - a.count || a.jigId.localeCompare(b.jigId));
+}
+
+function dishSummary({ from, to }) {
+  const today = dishDayKey(Date.now());
+  const todayByJig = dishByJigFromDays([today]);
+
+  const allTimeByJig = [...dishLog.totalsByJig.entries()]
+    .map(([jigId, t]) => ({
+      jigId,
+      count: t.count,
+      firstTs: t.firstTs,
+      lastTs: t.lastTs,
+    }))
+    .sort((a, b) => b.count - a.count || a.jigId.localeCompare(b.jigId));
+
+  let range = null;
+  if (from || to) {
+    const days = [...dishLog.dayIndex.keys()].sort();
+    const fromDay = dishDayOf(from, days[0] || today);
+    const toDay = dishDayOf(to, days[days.length - 1] || today);
+    const byJig = dishByJigFromDays(dishEnumerateDays(fromDay, toDay));
+    range = {
+      from: fromDay,
+      to: toDay,
+      total: byJig.reduce((n, r) => n + r.count, 0),
+      byJig,
+    };
+  }
+
+  return {
+    tz: SERVER_TZ,
+    today: {
+      date: today,
+      total: todayByJig.reduce((n, r) => n + r.count, 0),
+      byJig: todayByJig,
+    },
+    allTime: {
+      total: allTimeByJig.reduce((n, r) => n + r.count, 0),
+      firstTs: allTimeByJig.length
+        ? allTimeByJig.reduce(
+            (min, r) => (r.firstTs < min ? r.firstTs : min),
+            allTimeByJig[0].firstTs,
+          )
+        : null,
+      lastTs: allTimeByJig.length
+        ? allTimeByJig.reduce(
+            (max, r) => (r.lastTs > max ? r.lastTs : max),
+            allTimeByJig[0].lastTs,
+          )
+        : null,
+      byJig: allTimeByJig,
+    },
+    range,
+    suspect: dishLog.suspect,
+    ignored: dishLog.ignored,
+    dedup: dishLog.dedup,
+  };
+}
+
+// Points are zero-filled across the whole range: a gap must render as an empty
+// slot, not be omitted, or idle hours get visually interpolated away.
+function dishThroughput({ bucket, from, to }) {
+  const today = dishDayKey(Date.now());
+  const known = [...dishLog.dayIndex.keys()].sort();
+  const fromDay = dishDayOf(from, known[0] || today);
+  const toDay = dishDayOf(to, known[known.length - 1] || today);
+  const days = dishEnumerateDays(fromDay, toDay);
+  const points = [];
+
+  if (bucket === "hour") {
+    for (const day of days) {
+      for (let h = 0; h < 24; h++) {
+        const hh = String(h).padStart(2, "0");
+        const key = `${day}T${hh}`;
+        points.push({
+          t: key,
+          label: days.length > 1 ? `${day.slice(5)} ${hh}:00` : `${hh}:00`,
+          count: dishLog.hourIndex.get(key) || 0,
+        });
+      }
+    }
+  } else {
+    for (const day of days) {
+      const perJig = dishLog.dayIndex.get(day);
+      let count = 0;
+      if (perJig) for (const n of perJig.values()) count += n;
+      points.push({ t: day, label: day.slice(5), count });
+    }
+  }
+
+  return {
+    tz: SERVER_TZ,
+    bucket: bucket === "hour" ? "hour" : "day",
+    from: fromDay,
+    to: toDay,
+    max: points.reduce((m, p) => (p.count > m ? p.count : m), 0),
+    total: points.reduce((n, p) => n + p.count, 0),
+    points,
+  };
+}
+
+function dishStatsPayload() {
+  const summary = dishSummary({});
+  const last = dishLog.events.length
+    ? dishLog.events[dishLog.events.length - 1]
+    : null;
+  return {
+    tz: SERVER_TZ,
+    today: summary.today,
+    allTime: { total: summary.allTime.total, byJig: summary.allTime.byJig },
+    lastTs: last ? last.ts : null,
+    lastJigId: last ? last.jigId : null,
+    lastCycleMs: last ? last.cycleMs : null,
+    suspect: dishLog.suspect,
+    writeErrors: dishLog.writeErrors,
+    clockWarning: dishLog.clockWarning,
+  };
+}
+
+function emitDishStats() {
+  if (dishLog.statsTimer) return;
+  dishLog.statsTimer = setTimeout(() => {
+    dishLog.statsTimer = null;
+    io.emit("dish-stats", dishStatsPayload());
+  }, 1000);
+}
+
+function dishCsvValue(value) {
+  if (value === null || value === undefined) return "";
+  const str = typeof value === "object" ? JSON.stringify(value) : String(value);
+  return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
+}
+
+function formatCycleMmss(ms) {
+  if (ms === null || ms === undefined) return "";
+  const total = Math.round(ms / 1000);
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
+}
+
+// Logging a dish must never be worth losing the pipette bridge: if data/ is not
+// writable by the systemd User=, run memory-only.
+try {
+  initDishLog();
+} catch (err) {
+  dishLog.loaded = false;
+  log(
+    "error",
+    "dish",
+    `Dish log could not be initialised (${err.message}) — running in memory only`,
+  );
 }
 
 // ============================================================================
@@ -807,6 +1478,118 @@ qrServer.listen(CONFIG.qrPort, "0.0.0.0", () => {
 });
 
 // ============================================================================
+// DISH LOG TCP SERVER
+// ============================================================================
+//
+// The robot sends one jig ID per completed dish:
+//   socket_open(SERVER_IP, 5003, "dishlog")
+//   socket_send_line("J01", "dishlog")      # _line, NOT _string — only _line appends \n
+//   socket_close("dishlog")
+//
+// Deliberately NOT a copy of the 5001/5002 framing: those do
+// data.toString().trim() and treat one TCP chunk as one message, so two rapid
+// sends coalesce into "J01J02". Here we buffer and split on \n, with a short
+// idle flush so socket_send_string (which appends nothing) still works.
+
+const dishServer = net.createServer((socket) => {
+  const clientAddr = `${socket.remoteAddress}:${socket.remotePort}`;
+  const srcIp = socket.remoteAddress
+    ? socket.remoteAddress.replace(/^::ffff:/, "")
+    : "unknown";
+
+  state.dishSockets.add(socket);
+  state.dishConnected = true;
+  log("info", "dish", `Dish client connected: ${clientAddr}`);
+  emitStatus();
+
+  socket.setNoDelay(true);
+  socket.setKeepAlive(true, 30000); // reap half-open sockets after a robot power cycle
+
+  let buffer = "";
+  let idleTimer = null;
+
+  const handle = (line) => {
+    const result = recordDish(line, srcIp);
+    // Always ACK OK to the robot: the URScript has no error branch, and a stray
+    // row beats someone debugging a stalled program at 2am. IGN is for humans
+    // testing with nc.
+    socket.write(result.action === "ignored" ? "IGN\n" : "OK\n");
+  };
+
+  const drain = (force) => {
+    let i;
+    while ((i = buffer.indexOf("\n")) !== -1) {
+      handle(buffer.slice(0, i));
+      buffer = buffer.slice(i + 1);
+    }
+    if (force && buffer.trim()) {
+      handle(buffer);
+      buffer = "";
+    }
+  };
+
+  socket.on("data", (chunk) => {
+    buffer += chunk.toString("utf-8");
+
+    if (buffer.length > CONFIG.dishMaxLineBytes) {
+      log(
+        "error",
+        "dish",
+        `Oversized payload from ${clientAddr} (${buffer.length}B) — discarded`,
+      );
+      buffer = "";
+      socket.write("ERR overflow\n");
+      return;
+    }
+
+    drain(false);
+
+    if (idleTimer) clearTimeout(idleTimer);
+    if (buffer.length) {
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        drain(true);
+      }, CONFIG.dishIdleFlushMs);
+    }
+  });
+
+  let torn = false;
+  const teardown = (errMessage) => {
+    if (torn) return;
+    torn = true;
+    if (idleTimer) {
+      clearTimeout(idleTimer);
+      idleTimer = null;
+    }
+    // Drain before deregistering: a send immediately followed by socket_close
+    // must still record the dish when the FIN lands inside the idle window.
+    drain(true);
+    state.dishSockets.delete(socket);
+    state.dishConnected = state.dishSockets.size > 0;
+    if (errMessage) {
+      log("error", "dish", `Dish socket error (${clientAddr}): ${errMessage}`);
+    } else {
+      log("info", "dish", `Dish client disconnected: ${clientAddr}`);
+    }
+    emitStatus();
+  };
+
+  socket.on("end", () => teardown(null));
+  socket.on("close", () => teardown(null));
+  socket.on("error", (err) => teardown(err.message));
+});
+
+// Neither existing TCP server has a listen-error handler; without this an
+// EADDRINUSE on 5003 would take down the whole bridge.
+dishServer.on("error", (err) => {
+  log("error", "server", `Dish log server error: ${err.message}`);
+});
+
+dishServer.listen(CONFIG.dishPort, "0.0.0.0", () => {
+  log("info", "server", `Dish log server listening on port ${CONFIG.dishPort}`);
+});
+
+// ============================================================================
 // HTTP + WEBSOCKET SERVER FOR WEB DASHBOARD
 // ============================================================================
 
@@ -821,6 +1604,156 @@ app.post("/api/command", async (req, res) => {
   log("command", "dashboard", `Test command: ${command}`);
   const response = await sendToPipette(command);
   res.json(response);
+});
+
+// --- Dish log -------------------------------------------------------------
+// NOTE: these MUST stay above the app.get("*") SPA catch-all below, or every
+// one of them returns index.html with a 200.
+
+app.get("/api/dishlog/events", (req, res) => {
+  const { from, to, jig, order } = req.query;
+  const rangeError = validateDishRange(from, to);
+  if (rangeError) return res.status(400).json({ error: rangeError });
+
+  let limit = DISH_LIMIT_DEFAULT;
+  if (req.query.limit !== undefined) {
+    limit = Number.parseInt(req.query.limit, 10);
+    if (!Number.isFinite(limit) || limit < 1) {
+      return res.status(400).json({ error: `Invalid limit: ${req.query.limit}` });
+    }
+    limit = Math.min(limit, DISH_LIMIT_MAX);
+  }
+
+  const result = dishEventsInRange({
+    from,
+    to,
+    jig,
+    limit,
+    order: order === "asc" ? "asc" : "desc",
+  });
+
+  res.json({
+    tz: SERVER_TZ,
+    from: from || null,
+    to: to || null,
+    jig: jig || null,
+    order: order === "asc" ? "asc" : "desc",
+    count: result.events.length,
+    truncated: result.truncated,
+    source: result.source,
+    events: result.events,
+  });
+});
+
+app.get("/api/dishlog/summary", (req, res) => {
+  const { from, to } = req.query;
+  const rangeError = validateDishRange(from, to);
+  if (rangeError) return res.status(400).json({ error: rangeError });
+  res.json(dishSummary({ from, to }));
+});
+
+app.get("/api/dishlog/throughput", (req, res) => {
+  const { from, to, bucket } = req.query;
+  const rangeError = validateDishRange(from, to);
+  if (rangeError) return res.status(400).json({ error: rangeError });
+  res.json(dishThroughput({ bucket, from, to }));
+});
+
+app.get("/api/dishlog/export.csv", (req, res) => {
+  const { from, to, jig } = req.query;
+  const rangeError = validateDishRange(from, to);
+  if (rangeError) return res.status(400).json({ error: rangeError });
+
+  const predicate = dishRangeFilter({ from, to, jig });
+  const name = `dishlog_${from || "start"}_${to || "now"}.csv`;
+
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="${name}"`);
+  res.write(
+    "seq,ts,day,time_local,jig_id,operator,cycle_ms,cycle_mmss,status,raw,src\n",
+  );
+
+  // Streamed month by month — never build the whole body in memory.
+  let files = [];
+  try {
+    files = dishLogFiles();
+  } catch (err) {
+    log("error", "dish", `CSV export could not list files: ${err.message}`);
+  }
+
+  for (const fileName of files) {
+    let lines;
+    try {
+      lines = fs
+        .readFileSync(path.join(DISH_DATA_DIR, fileName), "utf8")
+        .split("\n");
+    } catch (err) {
+      log("error", "dish", `CSV export could not read ${fileName}: ${err.message}`);
+      continue;
+    }
+    for (const raw of lines) {
+      if (!raw) continue;
+      let rec;
+      try {
+        rec = JSON.parse(raw);
+      } catch {
+        continue;
+      }
+      if (!predicate(rec)) continue;
+      res.write(
+        [
+          rec.seq,
+          rec.ts,
+          rec.day,
+          new Date(rec.ts).toLocaleTimeString("en-GB", {
+            timeZone: SERVER_TZ,
+            hour12: false,
+          }),
+          rec.jigId,
+          rec.operator,
+          rec.cycleMs,
+          formatCycleMmss(rec.cycleMs),
+          rec.status,
+          rec.raw,
+          rec.src,
+        ]
+          .map(dishCsvValue)
+          .join(",") + "\n",
+      );
+    }
+  }
+
+  res.end();
+});
+
+app.get("/api/dishlog/stats", (req, res) => {
+  let files = [];
+  try {
+    files = dishLogFiles().map((name) => ({
+      name,
+      bytes: fs.statSync(path.join(DISH_DATA_DIR, name)).size,
+    }));
+  } catch {
+    // data dir unreadable — report what we have
+  }
+
+  res.json({
+    loaded: dishLog.loaded,
+    total: dishLog.total,
+    inMemory: dishLog.events.length,
+    droppedFromMemory: dishLog.droppedFromMemory,
+    lastSeq: dishLog.lastSeq,
+    activeMonth: dishLog.activeMonth,
+    files,
+    parseErrors: dishLog.parseErrors,
+    writeErrors: dishLog.writeErrors,
+    suspect: dishLog.suspect,
+    ignored: dishLog.ignored,
+    dedup: dishLog.dedup,
+    clockWarning: dishLog.clockWarning,
+    tz: SERVER_TZ,
+    bootId: BOOT_ID,
+  });
 });
 
 app.get("*", (req, res) => {
@@ -841,6 +1774,10 @@ io.on("connection", (socket) => {
     })),
   );
   socket.emit("active-pipette", pipetteRegistry.activeModel);
+  socket.emit("dish-snapshot", {
+    events: dishLog.events.slice(-DISH_SNAPSHOT_N).reverse(), // newest-first
+    stats: dishStatsPayload(),
+  });
 
   socket.on("disconnect", () => {
     log("info", "dashboard", `Web client disconnected: ${socket.id}`);
@@ -926,7 +1863,24 @@ async function startServer() {
   log("info", "server", "=".repeat(60));
   log("info", "server", `TCP port (robot): ${CONFIG.tcpPort}`);
   log("info", "server", `QR port: ${CONFIG.qrPort}`);
+  log("info", "server", `Dish log port: ${CONFIG.dishPort}`);
   log("info", "server", `HTTP port (dashboard): ${CONFIG.httpPort}`);
+  log(
+    "info",
+    "server",
+    `Dish log: ${dishLog.total} events loaded, ` +
+      `${dishLog.totalsByJig.size} jig(s), last seq ${dishLog.lastSeq}` +
+      (dishLog.parseErrors
+        ? `, ${dishLog.parseErrors} unparseable line(s) skipped`
+        : ""),
+  );
+  if (dishLog.clockWarning) {
+    log(
+      "error",
+      "server",
+      "Dish log: newest record is in the future — system clock may be unsynced (no RTC?)",
+    );
+  }
   log("info", "server", "=".repeat(60));
 
   const discovered = await discoverPipettes();
@@ -954,8 +1908,12 @@ async function startServer() {
 
 startServer();
 
-// Graceful shutdown
-process.on("SIGINT", () => {
+// Graceful shutdown. systemd sends SIGTERM (see README "Run as a Service"), so a
+// SIGINT-only handler never fires in production.
+let shuttingDown = false;
+function shutdown() {
+  if (shuttingDown) return;
+  shuttingDown = true;
   log("info", "server", "Shutting down...");
   for (const p of pipetteRegistry.discovered) {
     if (p.serialPort && p.serialPort.isOpen) {
@@ -964,6 +1922,11 @@ process.on("SIGINT", () => {
   }
   tcpServer.close();
   qrServer.close();
+  dishServer.close();
+  closeDishLog();
   httpServer.close();
   process.exit(0);
-});
+}
+
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);

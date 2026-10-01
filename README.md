@@ -130,11 +130,51 @@ SERIAL_PORT=/dev/ttyACM0 npm start
 
 ### Ports
 
-- **TCP Port (Robot)**: 5000
-- **HTTP/WebSocket (Dashboard)**: 3001
-- **Frontend Dev Server**: 3000
+| Port    | Direction    | Purpose                                                 |
+| ------- | ------------ | ------------------------------------------------------- |
+| `5001`  | inbound TCP  | Robot → bridge pipette commands (`CONFIG.tcpPort`)      |
+| `5002`  | inbound TCP  | QR / Wenglor vision sensor jig IDs (`CONFIG.qrPort`)    |
+| `5003`  | inbound TCP  | **Dish log** — one jig ID per completed dish (`CONFIG.dishPort`) |
+| `3001`  | inbound HTTP | Dashboard + Socket.IO + static frontend (`CONFIG.httpPort`) |
+| `3000`  | inbound HTTP | Frontend dev server (Vite, dev only)                    |
+| `29999` | outbound TCP | UR Dashboard Server on the robot                        |
 
 Change in `backend/bridge-server.js` if needed.
+
+### Dish log
+
+Every completed dish is appended to `backend/data/dishlog.jsonl` (one JSON object
+per line, fsync'd on write so a power cut cannot lose the last record, rolled
+over monthly into `dishlog-YYYY-MM.jsonl`). The directory is gitignored — these
+are production records, not source.
+
+From URScript, send one jig ID per dish:
+
+```python
+socket_open("192.168.1.20", 5003, "dishlog")   # once, at program start
+
+# ...after each completed dish:
+socket_send_line("J01", "dishlog")             # _line, NOT _string: only _line appends \n
+ack = socket_read_string("dishlog", timeout=2) # "OK", or "IGN" for an ignored value
+
+socket_close("dishlog")                        # at program end
+```
+
+`socket_send_string` also works (the server flushes an unterminated buffer after
+`CONFIG.dishIdleFlushMs`), but `socket_send_line` is the deterministic path.
+Holding the socket open for the whole program is preferred — a connect/disconnect
+per dish floods the Communication Logs view, which only keeps the last 100 entries.
+
+Optional extras travel on the same line and need no server change:
+`socket_send_line("J01;prog=sperm_wash;op=anna", "dishlog")` — `op` populates the
+operator field, anything else lands in `meta`.
+
+View it at `/dishlog` on the dashboard: live event log, per-jig summary,
+throughput chart, date-range filter and CSV export.
+
+**Raspberry Pi clocks:** a Pi has no battery-backed RTC, so timestamps can be
+wrong until NTP syncs after boot. Install `fake-hwclock` + `chrony` (or fit a
+DS3231) — the dashboard shows a warning banner when it detects a skewed clock.
 
 ## Usage
 
