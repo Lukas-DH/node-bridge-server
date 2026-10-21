@@ -2,6 +2,7 @@ import { useState, useEffect, createContext } from "react";
 import { Routes, Route, Link, useLocation } from "react-router-dom";
 import { io } from "socket.io-client";
 import ConnectionStatus from "./components/ConnectionStatus";
+import VersionInfo from "./components/VersionInfo";
 import Home from "./pages/Home";
 import RobotControl from "./pages/RobotControl";
 import OperatorPanel from "./pages/OperatorPanel2";
@@ -29,6 +30,7 @@ function App() {
   const [handshakeSteps, setHandshakeSteps] = useState([]);
   const [connected, setConnected] = useState(false);
   const [activePipette, setActivePipette] = useState(null);
+  const [serverVersion, setServerVersion] = useState(null);
   const location = useLocation();
   const isOperatorPage = location.pathname === "/operator";
 
@@ -55,6 +57,9 @@ function App() {
         qrValue: null,
       });
     });
+
+    // Sent on every (re)connect, so a service restart updates the footer
+    newSocket.on("server-version", setServerVersion);
 
     // Listen for status updates
     newSocket.on("status", (newStatus) => {
@@ -226,6 +231,7 @@ function App() {
 
         <footer className="app-footer">
           <p>Pipette Bridge Server - Node.js + React - Real-time monitoring</p>
+          <VersionInfo serverVersion={connected ? serverVersion : null} />
         </footer>
       </div>
     </SocketContext.Provider>

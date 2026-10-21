@@ -98,6 +98,30 @@ code {
   font-size: 0.9rem;
 }
 
+.version-info {
+  margin-top: 0.4rem;
+  font-family: monospace;
+  font-size: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.version-sep {
+  color: #555;
+}
+
+.version-dirty {
+  color: #f5a623;
+}
+
+.version-mismatch {
+  flex-basis: 100%;
+  color: #f5a623;
+  font-weight: bold;
+}
+
 /* Connection Status */
 .connection-status {
   display: flex;

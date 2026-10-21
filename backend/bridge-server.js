@@ -17,6 +17,7 @@ import net from "net";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 import { SerialPort } from "serialport";
 import { ReadlineParser } from "@serialport/parser-readline";
 import express from "express";
@@ -158,6 +159,32 @@ const DISH_DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 
 const SERVER_TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 const BOOT_ID = Math.random().toString(16).slice(2, 10);
+
+// Which commit this process is running, so the dashboard can show whether a
+// deploy actually took (service restarted, not a stale manual copy).
+function readGitVersion() {
+  const git = (cmd) => {
+    try {
+      return execSync(`git ${cmd}`, {
+        cwd: __dirname,
+        stdio: ["ignore", "pipe", "ignore"],
+      })
+        .toString()
+        .trim();
+    } catch {
+      return null;
+    }
+  };
+  const status = git("status --porcelain");
+  return {
+    sha: git("rev-parse --short HEAD") || "unknown",
+    dirty: status === null ? false : status.length > 0,
+    commitDate: git("log -1 --format=%cI") || "unknown",
+    startedAt: new Date().toISOString(),
+    bootId: BOOT_ID,
+  };
+}
+const SERVER_VERSION = readGitVersion();
 
 // en-CA yields YYYY-MM-DD. Never hand-roll with getFullYear() — that silently
 // uses the process TZ and is the classic off-by-one-day bug.
@@ -1708,6 +1735,10 @@ app.get("/api/status", (req, res) => {
   res.json(emitStatus());
 });
 
+app.get("/api/version", (req, res) => {
+  res.json(SERVER_VERSION);
+});
+
 app.post("/api/command", async (req, res) => {
   const { command } = req.body;
   if (!command) return res.status(400).json({ error: "Command required" });
@@ -1876,6 +1907,7 @@ io.on("connection", (socket) => {
 
   // Send initial status and pipette list
   socket.emit("status", emitStatus());
+  socket.emit("server-version", SERVER_VERSION);
   socket.emit(
     "pipettes-list",
     pipetteRegistry.discovered.map((p) => ({
@@ -1971,6 +2003,11 @@ httpServer.listen(CONFIG.httpPort, () => {
 async function startServer() {
   log("info", "server", "=".repeat(60));
   log("info", "server", "Pipette Bridge Server Starting");
+  log(
+    "info",
+    "server",
+    `Version ${SERVER_VERSION.sha}${SERVER_VERSION.dirty ? "-dirty" : ""} (${SERVER_VERSION.commitDate})`,
+  );
   log("info", "server", "=".repeat(60));
   log("info", "server", `TCP port (robot): ${CONFIG.tcpPort}`);
   log("info", "server", `QR port: ${CONFIG.qrPort}`);
