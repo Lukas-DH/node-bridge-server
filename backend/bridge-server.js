@@ -39,6 +39,8 @@ const CONFIG = {
   dishIdleFlushMs: 150, // flush an unterminated buffer (socket_send_string sends no \n)
   dishMaxCycleMs: 2 * 60 * 60 * 1000, // a longer gap is not a real cycle time
   dishMaxLineBytes: 512,
+  expectedPipettes: 2,
+  pipetteRescanMs: 5000, // rescan forever at this interval while < expectedPipettes connected
 };
 
 // State (robot / dashboard / qr fields only — pipette state lives in pipetteRegistry)
@@ -70,6 +72,9 @@ const pipetteRegistry = {
   discovered: [], // Array of {model, port, serialPort, parser, connected, currentHandshake, pendingResponse}
   activeModel: null, // Currently selected model for commands
 };
+
+// Set by shutdown() so closing serial ports doesn't trigger a rescan/reconnect
+let shuttingDown = false;
 
 // Express app for HTTP + WebSocket
 const app = express();
@@ -791,19 +796,26 @@ try {
 // ============================================================================
 
 // Discover and identify all connected pipettes
-async function discoverPipettes() {
-  log("info", "server", "Starting pipette discovery...");
+// excludePorts: paths owned by connected pipettes — never probe those.
+// quiet: periodic rescans stay silent unless there is something to probe.
+async function discoverPipettes({ excludePorts = [], quiet = false } = {}) {
+  if (!quiet) log("info", "server", "Starting pipette discovery...");
 
   try {
     const ports = await SerialPort.list();
-    log("info", "server", `Found ${ports.length} serial ports`);
 
     // Filter for likely pipette ports (macOS: tty.usbmodem*, Linux/Pi: ttyACM*)
     const candidatePorts = ports.filter((port) => {
       const path = port.path;
-      return path.includes("tty.usbmodem") || path.includes("ttyACM");
+      return (
+        (path.includes("tty.usbmodem") || path.includes("ttyACM")) &&
+        !excludePorts.includes(path)
+      );
     });
 
+    if (quiet && candidatePorts.length === 0) return [];
+
+    log("info", "server", `Found ${ports.length} serial ports`);
     log(
       "info",
       "server",
@@ -940,6 +952,15 @@ function connectToPipette(pipetteInfo) {
 
   log("info", "server", `Connecting to ${model} on ${port}`);
 
+  // Detach the previous port so its late close/data events can't touch the registry
+  if (pipetteInfo.serialPort) {
+    const old = pipetteInfo.serialPort;
+    old.removeAllListeners();
+    if (pipetteInfo.parser) pipetteInfo.parser.removeAllListeners();
+    old.on("error", () => {}); // swallow errors from the abandoned port
+    if (old.isOpen) old.close();
+  }
+
   const serialPort = new SerialPort({
     path: port,
     baudRate: CONFIG.serialBaudRate,
@@ -960,17 +981,29 @@ function connectToPipette(pipetteInfo) {
     pipetteInfo.connected = false;
     log("error", "pipette", `${model} error: ${err.message}`);
     emitPipetteStatus();
+    // Close so the "close" handler cleans up and the port path is freed for rescan
+    if (serialPort.isOpen) serialPort.close();
+    // A failed open emits only "error", never "close" — the rescan loop covers both
+    scheduleRescan(CONFIG.pipetteRescanMs);
   });
 
   serialPort.on("close", () => {
     pipetteInfo.connected = false;
+    pipetteInfo.currentHandshake = null;
+    // Fail an in-flight command now rather than after handshakeTimeout
+    if (pipetteInfo.pendingResponse) {
+      clearTimeout(pipetteInfo.pendingResponse.timeout);
+      pipetteInfo.pendingResponse.resolve({
+        status: "ERROR",
+        message: `Pipette ${model} disconnected`,
+        data: null,
+      });
+      pipetteInfo.pendingResponse = null;
+    }
     log("info", "pipette", `${model} disconnected`);
     emitPipetteStatus();
-
-    setTimeout(() => {
-      log("info", "server", `Attempting to reconnect ${model}...`);
-      connectToPipette(pipetteInfo);
-    }, 3000);
+    // Reconnection is owned by ensurePipettes(): the port path may change on replug
+    scheduleRescan(CONFIG.pipetteRescanMs);
   });
 
   parser.on("data", (line) => {
@@ -1038,6 +1071,84 @@ async function connectAllPipettes() {
   if (pipetteRegistry.discovered.length > 0) {
     pipetteRegistry.activeModel = pipetteRegistry.discovered[0].model;
     log("info", "server", `Active pipette: ${pipetteRegistry.activeModel}`);
+  }
+}
+
+// ----------------------------------------------------------------------------
+// Rescan supervisor: while fewer than CONFIG.expectedPipettes are connected,
+// rediscover pipettes every CONFIG.pipetteRescanMs and reconnect them by model
+// (not by port path — USB replug can move /dev/ttyACM0 to /dev/ttyACM2).
+// ----------------------------------------------------------------------------
+
+const rescan = { timer: null, running: false, lastMissing: null };
+
+function scheduleRescan(delayMs) {
+  if (shuttingDown) return;
+  clearTimeout(rescan.timer);
+  rescan.timer = setTimeout(ensurePipettes, delayMs);
+}
+
+async function ensurePipettes() {
+  if (shuttingDown || rescan.running) return;
+
+  const connected = pipetteRegistry.discovered.filter((p) => p.connected);
+  const missing = CONFIG.expectedPipettes - connected.length;
+
+  // Log only on change so the dashboard log isn't flooded every 5s
+  if (missing !== rescan.lastMissing) {
+    rescan.lastMissing = missing;
+    if (missing > 0) {
+      log(
+        "error",
+        "server",
+        `${connected.length}/${CONFIG.expectedPipettes} pipettes connected — rescanning every ${CONFIG.pipetteRescanMs / 1000}s`,
+      );
+    } else {
+      log("info", "server", `All ${CONFIG.expectedPipettes} pipettes connected`);
+    }
+  }
+
+  if (missing <= 0) {
+    scheduleRescan(CONFIG.pipetteRescanMs);
+    return;
+  }
+
+  rescan.running = true;
+  try {
+    const found = await discoverPipettes({
+      // Includes ports still mid-open, which aren't "connected" yet
+      excludePorts: pipetteRegistry.discovered
+        .filter((p) => p.serialPort?.isOpen || p.serialPort?.opening)
+        .map((p) => p.port),
+      quiet: true,
+    });
+
+    for (const f of found) {
+      if (shuttingDown) break;
+      const existing = pipetteRegistry.discovered.find(
+        (p) => p.model === f.model,
+      );
+      if (existing?.connected) continue;
+      if (existing) {
+        existing.port = f.port;
+        connectToPipette(existing);
+      } else {
+        pipetteRegistry.discovered.push(f);
+        connectToPipette(f);
+      }
+      log("info", "server", `Recovered ${f.model} on ${f.port}`);
+    }
+
+    if (!pipetteRegistry.activeModel && pipetteRegistry.discovered.length > 0) {
+      pipetteRegistry.activeModel = pipetteRegistry.discovered[0].model;
+      log("info", "server", `Active pipette: ${pipetteRegistry.activeModel}`);
+    }
+    if (found.length > 0) emitPipetteStatus();
+  } catch (err) {
+    log("error", "server", `Pipette rescan failed: ${err.message}`);
+  } finally {
+    rescan.running = false;
+    scheduleRescan(CONFIG.pipetteRescanMs);
   }
 }
 
@@ -1891,7 +2002,7 @@ async function startServer() {
     log(
       "info",
       "server",
-      "Server will continue running and wait for pipettes...",
+      `Server will continue running and rescan every ${CONFIG.pipetteRescanMs / 1000}s...`,
     );
   } else {
     await connectAllPipettes();
@@ -1904,16 +2015,18 @@ async function startServer() {
     log("info", "server", `Active pipette: ${pipetteRegistry.activeModel}`);
     log("info", "server", "=".repeat(60));
   }
+
+  scheduleRescan(CONFIG.pipetteRescanMs);
 }
 
 startServer();
 
 // Graceful shutdown. systemd sends SIGTERM (see README "Run as a Service"), so a
 // SIGINT-only handler never fires in production.
-let shuttingDown = false;
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
+  clearTimeout(rescan.timer);
   log("info", "server", "Shutting down...");
   for (const p of pipetteRegistry.discovered) {
     if (p.serialPort && p.serialPort.isOpen) {

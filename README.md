@@ -510,6 +510,13 @@ sudo systemctl enable pipette-bridge
 sudo systemctl start pipette-bridge
 ```
 
+**Pipette auto-reconnect:** while fewer than `CONFIG.expectedPipettes` (2) are
+connected, the server rescans serial ports every `CONFIG.pipetteRescanMs` (5s)
+and reconnects pipettes by model, so a pipette that is unplugged, power-cycled,
+or plugged into a different USB port (new `/dev/ttyACM*` path) comes back
+without restarting the service. Ports of connected pipettes are never probed.
+`Restart=always` remains the backstop if the process itself crashes.
+
 ## Development
 
 ### Adding Features
