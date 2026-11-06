@@ -40,7 +40,7 @@ const CONFIG = {
   dishIdleFlushMs: 150, // flush an unterminated buffer (socket_send_string sends no \n)
   dishMaxCycleMs: 2 * 60 * 60 * 1000, // a longer gap is not a real cycle time
   dishMaxLineBytes: 512,
-  expectedPipettes: 2,
+  expectedPipettes: 3,
   pipetteRescanMs: 5000, // rescan forever at this interval while < expectedPipettes connected
 };
 
@@ -859,9 +859,13 @@ async function discoverPipettes({ excludePorts = [], quiet = false } = {}) {
         const model = await identifyPipette(portPath);
 
         if (model) {
-          log("info", "server", `✓ Identified ${model} on ${portPath}`);
+          // Suffix the USB serial tail so two pipettes of the same model get
+          // distinct, replug-stable names (e.g. SINGLE_CHANNEL_5ML_ab12)
+          const serial = portInfo.serialNumber;
+          const name = serial ? `${model}_${serial.slice(-4)}` : model;
+          log("info", "server", `✓ Identified ${name} on ${portPath}`);
           discovered.push({
-            model,
+            model: name,
             port: portPath,
             serialPort: null,
             parser: null,

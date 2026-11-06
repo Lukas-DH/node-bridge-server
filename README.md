@@ -141,6 +141,19 @@ SERIAL_PORT=/dev/ttyACM0 npm start
 
 Change in `backend/bridge-server.js` if needed.
 
+### Pipette names
+
+Each pipette is named `<MODEL>_<last 4 of USB serial>`, e.g.
+`SINGLE_CHANNEL_5ML_ab12`, so two pipettes of the same model can be told apart.
+The name stays the same across reboots and USB sockets. Read it from the
+dashboard's pipette selector or `journalctl -u pipette-bridge -b | grep Identified`.
+
+From URScript, prefix the command with the name to pick the pipette:
+`socket_send_string("SINGLE_CHANNEL_5ML_ab12 RUN_ASPIRATE 100 7", "pipette")`.
+Without a prefix the command goes to the currently active pipette.
+
+The server keeps rescanning until `CONFIG.expectedPipettes` (3) are connected.
+
 ### Dish log
 
 Every completed dish is appended to `backend/data/dishlog.jsonl` (one JSON object
@@ -510,7 +523,7 @@ sudo systemctl enable pipette-bridge
 sudo systemctl start pipette-bridge
 ```
 
-**Pipette auto-reconnect:** while fewer than `CONFIG.expectedPipettes` (2) are
+**Pipette auto-reconnect:** while fewer than `CONFIG.expectedPipettes` (3) are
 connected, the server rescans serial ports every `CONFIG.pipetteRescanMs` (5s)
 and reconnects pipettes by model, so a pipette that is unplugged, power-cycled,
 or plugged into a different USB port (new `/dev/ttyACM*` path) comes back
